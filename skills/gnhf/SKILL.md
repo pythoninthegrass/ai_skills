@@ -253,11 +253,38 @@ the TTL), or you've confirmed real thrashing.
 
 ## 7. Finish
 
-Don't push or open a PR from these runs by default — the point is a human
-reviews the worktree directly before anything goes further. Report back:
+On `MANUAL_RUN: BAILED —`, TTL expiry, or a thrashing kill: don't push
+anything. Report the blocker and the worktree + log paths for manual
+review.
+
+On `MANUAL_RUN: DONE —`: the launched agent commits locally only (per its
+own FINISH PROTOCOL, step 4 above) and never pushes or opens a PR itself —
+that's deliberate, so nothing goes further before a review step happens.
+That review step is yours, not optional, and not the same as trusting the
+run's own self-report:
+
+1. `git diff --stat <base>..<head>` — confirm the diff touches only what
+   the task's Acceptance Criteria describe (task file, the specific
+   ref/tools paths named in the task), not unrelated trees. Confirm any
+   untracked entries are pre-existing gitignored symlinks (`analysis`,
+   `extracted`), not real content that should've been `.gitignore`d or
+   was accidentally staged.
+2. Check the task file's Acceptance Criteria are actually checked `[x]`,
+   not just claimed done in prose.
+3. Once the diff passes review, push the branch and open a PR (`gh pr
+   create`, following whatever title/body convention recent merged PRs in
+   this repo already use) — then **merge it by default** (`gh pr merge
+   --squash`, matching this repo's established merge style) rather than
+   leaving it open for a separate human pass. Fast-forward the local
+   `main` checkout (`git fetch && git merge --ff-only origin/main`) so the
+   next task's worktree branches off a `main` that includes it.
+
+Only skip the push/merge and escalate instead if review turns up a real
+problem (scope violation, an unchecked AC, fabricated evidence) — report
+that plainly rather than merging over it. Always report back:
 DONE/BAILED/TTL-expired/killed-for-thrashing, what actually landed (from
-`git log`/`git diff`, not from the run's own self-report), and the
-worktree + log paths for manual review.
+`git log`/`git diff`, not from the run's own self-report), and the PR/merge
+outcome.
 
 ## Bundled scripts
 
