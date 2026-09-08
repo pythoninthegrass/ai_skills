@@ -5,8 +5,6 @@ Personal collection of [Agent Skills](https://agentskills.io/specification)
 pi, and other compatible agents load on demand. Each skill lives in its own
 directory under `skills/`.
 
-[![skills.sh](https://skills.sh/b/pythoninthegrass/ai_skills)](https://skills.sh/pythoninthegrass/ai_skills)
-
 ## Skills
 
 | Skill  | Description |
