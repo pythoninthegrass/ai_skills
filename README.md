@@ -88,3 +88,12 @@ A skill's `SKILL.md` is instructions the model reads and follows, and any
 bundled scripts are code the model can execute. Review both before
 installing a skill from anywhere, including this repo. `gnhf` bundles
 `scripts/smoke-test.sh`.
+
+## Prior art
+
+[kunchenguid/gnhf](https://github.com/kunchenguid/gnhf) is an unrelated npm
+package that shares this skill's name. This `gnhf` skill was written from
+scratch for how this author runs unattended agents (manual git worktree, a
+plain background process, `timeout` for the wall-clock bound), but that
+project's README was useful reference material while naming and scoping
+this one.
