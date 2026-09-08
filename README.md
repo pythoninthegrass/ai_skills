@@ -32,6 +32,23 @@ To try a skill without installing it:
 npx skills use pythoninthegrass/ai_skills@gnhf | claude
 ```
 
+### Update
+
+```bash
+npx skills update
+```
+
+Checks every installed skill's lock-file hash against its source and
+refreshes only the ones that changed upstream, reporting `N skills already
+up to date` otherwise. This is the intended way to pull in new commits from
+this repo — `npx skills add` also overwrites an already-installed skill
+(flagged as `overwrites:` in its install summary) if you re-run it, but it
+re-runs the full interactive install flow each time rather than just
+refreshing what changed.
+
+If you installed manually (below), `git pull` in your checkout is enough —
+the symlink always points at the working tree.
+
 ### Manual install
 
 `skills add` installs a pinned snapshot (refreshed via `npx skills update`),
