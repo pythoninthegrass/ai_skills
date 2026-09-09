@@ -97,14 +97,17 @@ another open-weight model, whatever) without ever asking it.
      referenced elsewhere may have been rotated out, which is itself a
      likely explanation for why step 2 failed.
 4. **Retry the smoke test** with whatever explicit provider/model step 3
-   turned up:
+   turned up. Current Aperture model IDs: `qwen3.8-flash-next-iq4`,
+   `qwen3.5-9b`. The `:builder` suffix is retired — `qwen3.8-flash-next-iq4`
+   is a single routable model ID.
 
    ```bash
-   "${SKILL_DIR}/scripts/smoke-test.sh" pi --provider aperture --model "qwen3.8-flash-next-iq4:builder"
-   "${SKILL_DIR}/scripts/smoke-test.sh" opencode --model "aperture/qwen3.8-flash-next-iq4:builder"
+   "${SKILL_DIR}/scripts/smoke-test.sh" pi --provider aperture --model "qwen3.8-flash-next-iq4"
+   "${SKILL_DIR}/scripts/smoke-test.sh" opencode --model "aperture/qwen3.8-flash-next-iq4"
    ```
 
-   If this passes, resolve to this explicit value for the real run.
+   If this passes, resolve to this explicit value for the real run. If it
+   fails, retry against `qwen3.5-9b` before falling through to step 5.
 5. **Only if step 4 also fails, or step 3 found no config repos at all**:
    bail out cleanly. Report the specific blocker (which command failed, what
    it printed) rather than launching the real task on a guess.
