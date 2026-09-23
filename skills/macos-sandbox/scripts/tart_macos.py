@@ -118,6 +118,31 @@ def doctor():
     return problems
 
 
+DHCP_LEASE_PLIST = "/Library/Preferences/SystemConfiguration/com.apple.InternetSharing.default.plist"
+DHCP_LEASE_MAX_SECS = 3600  # tart's own recommendation shrinks this to 600
+DHCP_LEASE_WARNING = (
+    "the built-in DHCP server's lease time isn't shortened (default 86,400s) -- cloning and booting "
+    "many ephemeral VMs in one day can exhaust the address pool. Fix once: "
+    f"sudo defaults write {DHCP_LEASE_PLIST} bootpd -dict DHCPLeaseTimeSecs -int 600 "
+    "(or always pass `up --softnet`, which works around it automatically)."
+)
+
+
+def dhcp_lease_warning():
+    """Not a blocker -- `up --softnet` sidesteps this entirely, and a single
+    VM at a time never hits the default 86,400s lease's exhaustion point. Only
+    matters once a host clones/boots VMs repeatedly across a day."""
+    import re
+
+    result = run(["defaults", "read", DHCP_LEASE_PLIST, "bootpd"])
+    if result.returncode != 0:
+        return DHCP_LEASE_WARNING
+    match = re.search(r"DHCPLeaseTimeSecs\s*=\s*(\d+)", result.stdout)
+    if not match or int(match.group(1)) > DHCP_LEASE_MAX_SECS:
+        return DHCP_LEASE_WARNING
+    return None
+
+
 # --- argv builders (pure, no subprocess calls -- easy to unit test) ---
 
 
@@ -295,9 +320,14 @@ def parse_args(argv):
 
 def cmd_doctor():
     problems = doctor()
+    for problem in problems:
+        print(f"FAIL: {problem}", file=sys.stderr)
+
+    warning = dhcp_lease_warning()
+    if warning:
+        print(f"WARN: {warning}", file=sys.stderr)
+
     if problems:
-        for problem in problems:
-            print(f"FAIL: {problem}", file=sys.stderr)
         return EXIT_FAIL
     print("OK: tart, sshpass, and free disk all look fine")
     return EXIT_OK

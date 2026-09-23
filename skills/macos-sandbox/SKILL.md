@@ -47,7 +47,9 @@ one only when the task genuinely needs the real machine.
 
 Checks for `tart` (`brew install openai/tools/tart`), `sshpass`
 (`brew install cirruslabs/cli/sshpass`), Apple silicon, and free disk. Fix
-anything it flags before continuing -- it doesn't install for you.
+anything it flags before continuing -- it doesn't install for you. It also
+warns (non-fatally) if the host's DHCP lease time isn't shortened yet -- see
+the tweak just below; the warning doesn't block `golden`/`up`.
 
 Also do this once per host, per Tart's own install notes -- the built-in
 macOS DHCP server hands out 86,400s leases by default, which exhausts the

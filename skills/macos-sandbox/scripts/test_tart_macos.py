@@ -142,6 +142,32 @@ def test_doctor_reports_missing_sshpass(monkeypatch):
     assert any("sshpass is not on PATH" in p for p in problems)
 
 
+# --- dhcp_lease_warning ---
+
+
+def test_dhcp_lease_warning_when_plist_key_missing(monkeypatch):
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=1, stderr="does not exist"))
+    assert tart_macos.dhcp_lease_warning() is not None
+
+
+def test_dhcp_lease_warning_when_still_default(monkeypatch):
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0, stdout="DHCPLeaseTimeSecs = 86400;\n"))
+    assert tart_macos.dhcp_lease_warning() is not None
+
+
+def test_dhcp_lease_no_warning_when_already_shortened(monkeypatch):
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0, stdout="DHCPLeaseTimeSecs = 600;\n"))
+    assert tart_macos.dhcp_lease_warning() is None
+
+
+def test_cmd_doctor_warns_but_does_not_fail_on_dhcp_lease(monkeypatch, capsys):
+    monkeypatch.setattr(tart_macos, "doctor", lambda: [])
+    monkeypatch.setattr(tart_macos, "dhcp_lease_warning", lambda: "lease tweak not set")
+    rc = tart_macos.cmd_doctor()
+    assert rc == tart_macos.EXIT_OK
+    assert "WARN: lease tweak not set" in capsys.readouterr().err
+
+
 def test_doctor_ok_when_everything_present(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos.shutil, "which", lambda name: "/usr/bin/" + name)
     monkeypatch.setattr(tart_macos, "MIN_FREE_GB_DEFAULT", 0)
