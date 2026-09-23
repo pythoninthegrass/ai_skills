@@ -1,0 +1,35 @@
+# Copy to playbook.yml in the repo you'll mount into the sandbox (run.py
+# looks for <repo>/playbook.yml by default; --playbook overrides). This is a
+# real Ansible playbook, run in-process by run.py against a dynamic
+# inventory built from the freshly-booted VM's own IP -- see
+# ~/git/nw_infra/networking/dhcp/run.py for the pattern this is modeled on.
+---
+- name: Provision macos-sandbox guest
+  hosts: sandbox
+  gather_facts: false
+
+  tasks:
+    - name: Wait for the guest to accept SSH connections
+      ansible.builtin.wait_for_connection:
+        timeout: 180
+
+    - name: Confirm the repo mounted where osascript-mcp automation expects it
+      ansible.builtin.stat:
+        path: "/Volumes/My Shared Files/repo"
+      register: repo_mount
+
+    - name: Fail loudly if the mount didn't come up
+      ansible.builtin.assert:
+        that: repo_mount.stat.exists and repo_mount.stat.isdir
+        fail_msg: "repo isn't mounted -- check `tart run --dir` on the host side"
+
+    # Add your own repo-specific setup below, e.g.:
+    #
+    # - name: Install project dependencies
+    #   ansible.builtin.shell: |
+    #     cd "/Volumes/My Shared Files/repo" && npm install
+    #   changed_when: true
+    #
+    # - name: Open the app under test
+    #   ansible.builtin.command: open -a "TextEdit" "/Volumes/My Shared Files/repo/README.md"
+    #   changed_when: false

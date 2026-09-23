@@ -113,7 +113,20 @@ to rebuild it). On first run it:
    permissions to SSH-driven `osascript` -- **no SIP disable required**, the
    vanilla image ships with SIP on and this only needs `sudo sqlite3`
    access to the per-user TCC database.
-5. Installs `uv` in the guest and stops the VM.
+5. Installs `uv` in the guest.
+6. Authorizes `TART_MACOS_GITHUB_KEYS_USER`'s (default `pythoninthegrass`)
+   GitHub public keys for inbound SSH (`curl .../pythoninthegrass.keys >>
+   ~/.ssh/authorized_keys`) and seeds `known_hosts` for `github.com` --
+   **no private key is ever copied into the guest.** This is baked into
+   `gg-golden` once, so every ephemeral clone inherits it from first boot.
+7. Stops the VM.
+
+`golden` is idempotent by checking whether `gg-golden` exists at all
+(`tart list`), not whether it's currently reachable -- an earlier version of
+this check used `tart ip`, which only works while a VM is running, so a
+normal `golden` run (which ends by stopping the VM) would make the *next*
+run wrongly conclude the VM didn't exist and try to re-clone into a name
+that was already taken.
 
 **If step 4 is refused** (a locked-down TCC database, or a macOS point
 release that moved something): re-run with `--grant`, which boots the VM
@@ -136,10 +149,14 @@ IP=$(echo "$RES" | jq -r .ip)
 
 Clones `gg-golden` into a fresh ephemeral VM (`gg-sbx-<timestamp>` unless
 you pass a name), boots it headless (`--no-graphics --no-audio
---no-clipboard`), and waits for IP + SSH. APFS clones are sparse and
-copy-on-write, so this is fast and cheap on disk despite the golden image's
-size. Pass `--softnet` for stricter network isolation (Tart's Softnet
-userspace filter) if the automation task shouldn't reach the LAN freely.
+--no-clipboard`), mounts the current directory (or `--repo PATH`) at the
+guest's shared `repo` folder -- `/Volumes/My Shared Files/repo`, a live
+virtiofs share, no copy step -- and waits for IP + SSH. APFS clones are
+sparse and copy-on-write, so this is fast and cheap on disk despite the
+golden image's size. `--no-repo` skips the mount entirely; `--repo-ro`
+mounts it read-only. Pass `--softnet` for stricter network isolation
+(Tart's Softnet userspace filter) if the automation task shouldn't reach
+the LAN freely.
 
 ```bash
 "${SKILL_DIR}/scripts/tart_macos.py" mcp "$NAME"
@@ -148,8 +165,14 @@ userspace filter) if the automation task shouldn't reach the LAN freely.
 Prints (doesn't run) the registration command:
 
 ```bash
-claude mcp add osascript-vm -- sshpass -p admin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null admin@<ip> '~/.local/bin/uvx --from git+https://github.com/pythoninthegrass/osascript-mcp osascript-mcp'
+claude mcp add osascript-vm -- sshpass -p admin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -A admin@<ip> '~/.local/bin/uvx --from git+https://github.com/pythoninthegrass/osascript-mcp osascript-mcp'
 ```
+
+The `-A` forwards the host's ssh-agent, so `git push`/`pull` against the
+mounted repo, run from inside the guest, authenticates using the host's
+already-loaded identity -- combined with golden's GitHub-keys bootstrap
+above, no private key or password ever needs to reach the guest for either
+direction of SSH.
 
 Run it (or have the user approve running it) to register `osascript-vm` for
 this session. From here, drive automation through `osascript-vm`'s tools,
@@ -175,6 +198,37 @@ deliberate, don't work around it by naming the golden VM's own name as an
 Lists `gg-*` VMs and their state at any point -- useful before `up` if a
 previous session's teardown didn't run.
 
+## Optional: `run.py` + `playbook.yml` for repeatable per-repo provisioning
+
+`up` + `mcp` + manual setup steps is enough for a one-off. When a repo needs
+the same guest-side setup every time (install deps, open a specific app,
+sanity-check the mount), drop a real Ansible playbook at its root and let
+`run.py` drive the whole thing in one call:
+
+```bash
+cp "${SKILL_DIR}/playbook.example.yml" /path/to/repo/playbook.yml   # edit it
+cd /path/to/repo
+"${SKILL_DIR}/scripts/run.py" up
+```
+
+This calls `tart_macos.py up --repo "$PWD"` under the hood, builds a
+dynamic Ansible inventory from the VM's own IP (same shape as
+`~/git/nw_infra/pulumi/k3s/ansible/inventory.yml` -- `ansible_host` under
+`hosts`, connection vars under `vars`, no password or private key needed
+since golden's GitHub-keys bootstrap already covers auth), runs
+`playbook.yml` in-process via `ansible.cli.playbook.PlaybookCLI` (the same
+pattern as `~/git/nw_infra/networking/dhcp/run.py`), prints the `mcp add`
+command, and remembers the VM in `.macos-sandbox-state.json` next to the
+playbook. Tear down with no arguments:
+
+```bash
+"${SKILL_DIR}/scripts/run.py" down
+```
+
+`run.py up` skips provisioning (with a warning, not a failure) if the repo
+has no `playbook.yml` -- it's an additive layer, not a requirement for
+`tart_macos.py up`/`down` to keep working standalone.
+
 ## Concurrency limit
 
 Apple's license permits at most 2 concurrent macOS VMs per host. Check
@@ -199,3 +253,12 @@ Accessibility/Screen Capture/Post Event/Apple Events to SSH-driven
 `scripts/test_tart_macos.py` -- the accompanying pytest suite, also a
 self-contained `uv run --script`. Run it directly
 (`./scripts/test_tart_macos.py`) after changing `tart_macos.py`.
+
+`scripts/run.py` -- optional `uv run --script` wrapper that shells out to
+`tart_macos.py up`/`mcp`/`down` and drives a real Ansible playbook against
+the fresh VM (see the section above). `scripts/test_run.py` covers its pure
+plumbing (state file, inventory shape, playbook resolution); it doesn't
+invoke `ansible-playbook` itself.
+
+`playbook.example.yml` -- copy to `playbook.yml` in the repo being
+automated. A real Ansible playbook, not a custom DSL.

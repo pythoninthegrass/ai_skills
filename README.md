@@ -101,10 +101,13 @@ skills/
     ├── SKILL.md
     ├── README.md
     ├── .env.example
+    ├── playbook.example.yml
     └── scripts/
         ├── tart_macos.py
         ├── test_tart_macos.py
-        └── grant-tcc.sh
+        ├── grant-tcc.sh
+        ├── run.py
+        └── test_run.py
 ```
 
 To add a new skill, create a directory under `skills/` with a `SKILL.md`
@@ -116,9 +119,10 @@ scaffolds one), then install/symlink it the same way as above.
 A skill's `SKILL.md` is instructions the model reads and follows, and any
 bundled scripts are code the model can execute. Review both before
 installing a skill from anywhere, including this repo. `gnhf` bundles
-`scripts/gnhf.py`; `macos-sandbox` bundles `scripts/tart_macos.py` and
-`scripts/grant-tcc.sh` (the latter writes directly to the guest VM's TCC
-database over SSH).
+`scripts/gnhf.py`; `macos-sandbox` bundles `scripts/tart_macos.py`,
+`scripts/grant-tcc.sh` (writes directly to the guest VM's TCC database over
+SSH), and the optional `scripts/run.py` (runs an Ansible playbook against
+the guest in-process).
 
 ## Prior art
 

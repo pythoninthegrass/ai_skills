@@ -21,10 +21,14 @@ automation runs sandboxed, not on the host desktop. See
 ## Parameters
 
 - **`up [name]`** -- clones `gg-golden` into `name` (default
-  `gg-sbx-<timestamp>`), boots it headless, prints `{"name", "ip"}` once
-  SSH is reachable. `--softnet` boots with Tart's Softnet network isolation.
+  `gg-sbx-<timestamp>`), boots it headless, mounts a repo directory (default
+  cwd) at the guest's shared `repo` folder, prints `{"name", "ip", "repo",
+  "repo_guest_path"}` once SSH is reachable. `--no-repo` skips the mount,
+  `--repo PATH` overrides it, `--repo-ro` mounts read-only. `--softnet` boots
+  with Tart's Softnet network isolation.
 - **`mcp [name]`** -- prints (doesn't run) the `claude mcp add` command that
-  wires `osascript-vm` to that clone.
+  wires `osascript-vm` to that clone, with `-A` agent forwarding so git
+  push/pull against the mounted repo works from inside the guest.
 - **`down [name]`** -- stops and deletes a clone. Refuses the golden VM's
   name unless `--golden` is passed.
 - **`golden`** -- one-time bootstrap; idempotent. `--force` rebuilds it,
@@ -54,6 +58,7 @@ gitignored). A CLI flag always wins over either.
 | `TART_MACOS_BOOT_TIMEOUT` | `180` |
 | `TART_MACOS_OSASCRIPT_MCP_REF` | `git+https://github.com/pythoninthegrass/osascript-mcp` |
 | `TART_MACOS_MCP_SERVER_NAME` | `osascript-vm` |
+| `TART_MACOS_GITHUB_KEYS_USER` | `pythoninthegrass` |
 
 ## Example
 
@@ -97,6 +102,37 @@ shrink it once (persists across reboots):
 ```bash
 sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.InternetSharing.default.plist bootpd -dict DHCPLeaseTimeSecs -int 600
 ```
+
+## Repeatable per-repo provisioning: `run.py` + `playbook.yml`
+
+For a repo that needs the same guest-side setup every time, copy
+`playbook.example.yml` to `playbook.yml` in that repo and drive the whole
+lifecycle with one command:
+
+```bash
+cd /path/to/repo
+/path/to/skill/scripts/run.py up     # up + dynamic inventory + ansible-playbook + mcp
+/path/to/skill/scripts/run.py down   # no name needed -- reads .macos-sandbox-state.json
+```
+
+`playbook.yml` is a real Ansible playbook (not a custom DSL), run in-process
+via `ansible.cli.playbook.PlaybookCLI` against a dynamic inventory built
+from the VM's own IP -- the same shape and in-process-CLI pattern as
+`~/git/nw_infra/networking/dhcp/run.py`. No `ansible_ssh_pass` or
+`ansible_ssh_private_key_file` is needed: see "SSH auth" below. `run.py up`
+skips provisioning (warns, doesn't fail) if the repo has no `playbook.yml`.
+
+## SSH auth: no private key ever reaches the guest
+
+- **Inbound (host → guest):** `golden` fetches
+  `https://github.com/<TART_MACOS_GITHUB_KEYS_USER>.keys` and appends it to
+  the guest's `~/.ssh/authorized_keys`, and seeds `known_hosts` for
+  `github.com`. This is baked into `gg-golden` once, so every clone inherits
+  it. Only public data ever leaves the host.
+- **Outbound (guest → GitHub, for git push/pull against the mounted repo):**
+  `mcp`'s registration command passes `-A` (agent forwarding), so git
+  commands run inside the guest authenticate through the host's already
+  unlocked ssh-agent. The guest never holds a private key of its own.
 
 ## Teardown
 
