@@ -31,7 +31,7 @@ Commands:
 
 Note:
     Defaults for every tunable below are resolved through python-decouple:
-    CLI flag > process env > skills/tart-macos-sandbox/.env > hardcoded
+    CLI flag > process env > skills/macos-sandbox/.env > hardcoded
     default. See .env.example for the full list of TART_MACOS_* names.
 """
 
@@ -49,7 +49,7 @@ EXIT_FAIL = 1
 EXIT_USAGE = 2
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-ENV_FILE = SCRIPT_DIR.parent / ".env"  # skills/tart-macos-sandbox/.env, not cwd-relative
+ENV_FILE = SCRIPT_DIR.parent / ".env"  # skills/macos-sandbox/.env, not cwd-relative
 
 SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
 

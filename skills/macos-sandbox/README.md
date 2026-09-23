@@ -1,4 +1,4 @@
-# tart-macos-sandbox
+# macos-sandbox
 
 Spin up the smallest usable macOS 27 (Golden Gate) VM with
 [Tart](https://github.com/openai/tart), and wire

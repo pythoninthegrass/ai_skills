@@ -1,5 +1,5 @@
 ---
-name: tart-macos-sandbox
+name: macos-sandbox
 description: >
   Spin up the smallest usable macOS 27 (Golden Gate) VM with Tart, and wire
   osascript-mcp's desktop automation (keyboard, windows, menus, screenshots,
@@ -11,7 +11,7 @@ description: >
 argument-hint: "[up|down|status|golden|doctor] [vm-name]"
 ---
 
-# tart-macos-sandbox
+# macos-sandbox
 
 ## Resolve `SKILL_DIR` (do this before running the bundled script)
 
@@ -20,7 +20,7 @@ layout. Set `SKILL_DIR` to the absolute path of the directory containing
 THIS SKILL.md you just Read, e.g.:
 
 ```text
-Read ~/.claude/skills/tart-macos-sandbox/SKILL.md → SKILL_DIR=~/.claude/skills/tart-macos-sandbox
+Read ~/.claude/skills/macos-sandbox/SKILL.md → SKILL_DIR=~/.claude/skills/macos-sandbox
 ```
 
 ## Why this exists
@@ -142,7 +142,7 @@ Apple's license permits at most 2 concurrent macOS VMs per host. Check
 `scripts/tart_macos.py` -- a self-contained `uv run --script` (PEP 723)
 tool with `doctor`, `golden`, `up`, `mcp`, `status`, and `down`
 subcommands, described above. Every tunable resolves through
-`python-decouple`: CLI flag > process env > `skills/tart-macos-sandbox/.env`
+`python-decouple`: CLI flag > process env > `skills/macos-sandbox/.env`
 > hardcoded default. See `.env.example` for the full list of
 `TART_MACOS_*` names. Run `scripts/tart_macos.py -h` for the flag list, and
 review the script before first use.

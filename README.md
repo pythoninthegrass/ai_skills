@@ -10,6 +10,7 @@ directory under `skills/`.
 | Skill  | Description |
 | ------ | ----------- |
 | [gnhf](skills/gnhf/SKILL.md) | Launch a bounded, low-supervision overnight coding agent run against one well-specced task, in an isolated worktree. |
+| [macos-sandbox](skills/macos-sandbox/SKILL.md) | Spin up the smallest usable macOS 27 (Golden Gate) VM with Tart and wire osascript-mcp's desktop automation into it over SSH, sandboxed away from the host desktop. |
 
 ## Install
 
@@ -89,10 +90,21 @@ after installing. Then:
 
 ```text
 skills/
-└── gnhf/
+├── gnhf/
+│   ├── SKILL.md
+│   ├── README.md
+│   ├── .env.example
+│   └── scripts/
+│       ├── gnhf.py
+│       └── test_gnhf.py
+└── macos-sandbox/
     ├── SKILL.md
+    ├── README.md
+    ├── .env.example
     └── scripts/
-        └── smoke-test.sh
+        ├── tart_macos.py
+        ├── test_tart_macos.py
+        └── grant-tcc.sh
 ```
 
 To add a new skill, create a directory under `skills/` with a `SKILL.md`
@@ -104,7 +116,9 @@ scaffolds one), then install/symlink it the same way as above.
 A skill's `SKILL.md` is instructions the model reads and follows, and any
 bundled scripts are code the model can execute. Review both before
 installing a skill from anywhere, including this repo. `gnhf` bundles
-`scripts/smoke-test.sh`.
+`scripts/gnhf.py`; `macos-sandbox` bundles `scripts/tart_macos.py` and
+`scripts/grant-tcc.sh` (the latter writes directly to the guest VM's TCC
+database over SSH).
 
 ## Prior art
 
