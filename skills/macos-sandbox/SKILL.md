@@ -63,11 +63,17 @@ this exact error by name rather than a generic "not found". Fix by
 installing 2.34.0 directly (Homebrew now requires formulae live in a tap,
 so pointing `brew install` at a loose `.rb` file won't work):
 
+Extract to a permanent location outside any repo/scratch dir -- `$PWD`
+means a later cleanup pass on whatever directory you happened to run this
+from can delete `tart.app` out from under the symlink, leaving `tart`
+"installed" but pointing at nothing:
+
 ```bash
-curl -LO https://github.com/openai/tart/releases/download/2.34.0/tart.tar.gz
-tar -xzvf tart.tar.gz
-mkdir -p ~/.local/bin
-ln -sf "$PWD/tart.app/Contents/MacOS/tart" ~/.local/bin/tart
+mkdir -p ~/.local/opt ~/.local/bin
+curl -L -o ~/.local/opt/tart.tar.gz https://github.com/openai/tart/releases/download/2.34.0/tart.tar.gz
+tar -xzvf ~/.local/opt/tart.tar.gz -C ~/.local/opt
+rm ~/.local/opt/tart.tar.gz
+ln -sf ~/.local/opt/tart.app/Contents/MacOS/tart ~/.local/bin/tart
 ```
 
 Re-check host compatibility if a later release ships the bundled-dylib fix

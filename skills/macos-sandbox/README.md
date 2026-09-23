@@ -74,12 +74,16 @@ and older -- it's built against the macOS 26/Xcode 27 Swift toolchain
 Homebrew now requires formulae to live in a tap (a loose `.rb` file won't
 install):
 
+Extract to a permanent location, not `$PWD` -- a repo/scratch dir can get
+cleaned up later and take `tart.app` with it, leaving the symlink dangling:
+
 ```bash
 brew uninstall tart 2>/dev/null
-curl -LO https://github.com/openai/tart/releases/download/2.34.0/tart.tar.gz
-tar -xzvf tart.tar.gz
-mkdir -p ~/.local/bin
-ln -sf "$PWD/tart.app/Contents/MacOS/tart" ~/.local/bin/tart
+mkdir -p ~/.local/opt ~/.local/bin
+curl -L -o ~/.local/opt/tart.tar.gz https://github.com/openai/tart/releases/download/2.34.0/tart.tar.gz
+tar -xzvf ~/.local/opt/tart.tar.gz -C ~/.local/opt
+rm ~/.local/opt/tart.tar.gz
+ln -sf ~/.local/opt/tart.app/Contents/MacOS/tart ~/.local/bin/tart
 ```
 
 ## Host DHCP lease (one-time, per host)
