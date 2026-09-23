@@ -64,6 +64,24 @@ Run the login flow in a sandboxed macOS VM, not on my real desktop.
 The agent runs `doctor` → `golden` (skipped if already built) → `up` →
 `mcp` → registers `osascript-vm` → drives the flow through it → `down`.
 
+## Known break: tart 2.35.0+ on pre-Tahoe hosts
+
+`brew install openai/tools/tart` currently installs 2.37.0, which crashes
+on launch (`dyld: ... libswiftCompatibilitySpan.dylib`) on macOS Sequoia
+and older -- it's built against the macOS 26/Xcode 27 Swift toolchain
+([openai/tart#1302](https://github.com/openai/tart/issues/1302), open).
+`doctor` detects this by name and points here. Pin 2.34.0 instead, since
+Homebrew now requires formulae to live in a tap (a loose `.rb` file won't
+install):
+
+```bash
+brew uninstall tart 2>/dev/null
+curl -LO https://github.com/openai/tart/releases/download/2.34.0/tart.tar.gz
+tar -xzvf tart.tar.gz
+mkdir -p ~/.local/bin
+ln -sf "$PWD/tart.app/Contents/MacOS/tart" ~/.local/bin/tart
+```
+
 ## Host DHCP lease (one-time, per host)
 
 The built-in macOS DHCP server hands out 86,400s leases by default, which

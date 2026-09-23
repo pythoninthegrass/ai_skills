@@ -138,8 +138,35 @@ def test_doctor_reports_missing_tart(monkeypatch):
 
 def test_doctor_reports_missing_sshpass(monkeypatch):
     monkeypatch.setattr(tart_macos.shutil, "which", lambda name: None if name == "sshpass" else "/usr/bin/" + name)
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0))
     problems = tart_macos.doctor()
     assert any("sshpass is not on PATH" in p for p in problems)
+
+
+def test_doctor_reports_tart_dyld_break(monkeypatch):
+    monkeypatch.setattr(tart_macos.shutil, "which", lambda name: "/usr/bin/" + name)
+
+    def fake_run(argv, **kwargs):
+        if argv == ["tart", "--version"]:
+            return fake_completed(returncode=1, stderr="dyld[1]: Library not loaded: @rpath/libswiftCompatibilitySpan.dylib")
+        return fake_completed(returncode=0)
+
+    monkeypatch.setattr(tart_macos, "run", fake_run)
+    problems = tart_macos.doctor()
+    assert any("2.34.0" in p for p in problems)
+
+
+def test_doctor_reports_tart_generic_failure(monkeypatch):
+    monkeypatch.setattr(tart_macos.shutil, "which", lambda name: "/usr/bin/" + name)
+
+    def fake_run(argv, **kwargs):
+        if argv == ["tart", "--version"]:
+            return fake_completed(returncode=1, stderr="permission denied")
+        return fake_completed(returncode=0)
+
+    monkeypatch.setattr(tart_macos, "run", fake_run)
+    problems = tart_macos.doctor()
+    assert any("permission denied" in p for p in problems)
 
 
 # --- dhcp_lease_warning ---
@@ -170,6 +197,7 @@ def test_cmd_doctor_warns_but_does_not_fail_on_dhcp_lease(monkeypatch, capsys):
 
 def test_doctor_ok_when_everything_present(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0))
     monkeypatch.setattr(tart_macos, "MIN_FREE_GB_DEFAULT", 0)
     import platform
 

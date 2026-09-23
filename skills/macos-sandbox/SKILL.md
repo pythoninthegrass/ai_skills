@@ -45,11 +45,33 @@ one only when the task genuinely needs the real machine.
 "${SKILL_DIR}/scripts/tart_macos.py" doctor
 ```
 
-Checks for `tart` (`brew install openai/tools/tart`), `sshpass`
-(`brew install cirruslabs/cli/sshpass`), Apple silicon, and free disk. Fix
-anything it flags before continuing -- it doesn't install for you. It also
-warns (non-fatally) if the host's DHCP lease time isn't shortened yet -- see
-the tweak just below; the warning doesn't block `golden`/`up`.
+Checks for `tart` (`brew install openai/tools/tart`), that `tart` actually
+runs (not just that it's on PATH -- see the pinned-version note below),
+`sshpass` (`brew install cirruslabs/cli/sshpass`), Apple silicon, and free
+disk. Fix anything it flags before continuing -- it doesn't install for
+you. It also warns (non-fatally) if the host's DHCP lease time isn't
+shortened yet -- see the tweak just below; the warning doesn't block
+`golden`/`up`.
+
+**Known break: `openai/tools/tart` 2.35.0+ doesn't run on macOS Sequoia (or
+older).** That formula version and later are built against the macOS
+26/Xcode 27 Swift toolchain and crash on launch with a `dyld:
+libswiftCompatibilitySpan.dylib` error on anything pre-Tahoe
+([openai/tart#1302](https://github.com/openai/tart/issues/1302), open,
+fix unmerged as of writing). `doctor` runs `tart --version` and reports
+this exact error by name rather than a generic "not found". Fix by
+installing 2.34.0 directly (Homebrew now requires formulae live in a tap,
+so pointing `brew install` at a loose `.rb` file won't work):
+
+```bash
+curl -LO https://github.com/openai/tart/releases/download/2.34.0/tart.tar.gz
+tar -xzvf tart.tar.gz
+mkdir -p ~/.local/bin
+ln -sf "$PWD/tart.app/Contents/MacOS/tart" ~/.local/bin/tart
+```
+
+Re-check host compatibility if a later release ships the bundled-dylib fix
+before relying on this pin indefinitely.
 
 Also do this once per host, per Tart's own install notes -- the built-in
 macOS DHCP server hands out 86,400s leases by default, which exhausts the

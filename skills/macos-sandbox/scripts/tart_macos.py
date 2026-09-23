@@ -94,10 +94,36 @@ def run(argv, **kwargs):
 # --- doctor ---
 
 
+TART_DYLD_BROKEN_HINT = (
+    "tart is on PATH but won't run (dyld: libswiftCompatibilitySpan.dylib) -- openai/tools/tart "
+    "2.35.0+ is built against the macOS 26/Xcode 27 Swift toolchain and crashes on Sequoia and "
+    "older (https://github.com/openai/tart/issues/1302). Use 2.34.0 instead: "
+    "curl -LO https://github.com/openai/tart/releases/download/2.34.0/tart.tar.gz && "
+    "tar -xzvf tart.tar.gz && ln -sf \"$PWD/tart.app/Contents/MacOS/tart\" ~/.local/bin/tart"
+)
+
+
+def check_tart_runs():
+    """`tart` being on PATH doesn't mean it runs -- 2.35.0+ links against a Swift
+    6.2 dylib that's absent pre-Tahoe and crashes on invocation, including
+    `--version`. Distinguish that known break from any other failure."""
+    tart_path = shutil.which("tart")
+    if not tart_path:
+        return "tart is not on PATH -- install: brew install openai/tools/tart"
+    result = run(["tart", "--version"])
+    if result.returncode == 0:
+        return None
+    stderr = result.stderr or ""
+    if "libswiftCompatibilitySpan" in stderr:
+        return TART_DYLD_BROKEN_HINT
+    return f"tart is on PATH but `tart --version` failed: {stderr.strip() or 'no output'}"
+
+
 def doctor():
     problems = []
-    if not shutil.which("tart"):
-        problems.append("tart is not on PATH -- install: brew install openai/tools/tart")
+    tart_problem = check_tart_runs()
+    if tart_problem:
+        problems.append(tart_problem)
     if not shutil.which("sshpass"):
         problems.append("sshpass is not on PATH -- install: brew install cirruslabs/cli/sshpass")
     if not shutil.which("ssh"):
