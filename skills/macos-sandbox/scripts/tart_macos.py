@@ -15,16 +15,22 @@
 Usage:
     tart_macos.py doctor
     tart_macos.py golden [--force] [--grant]
-    tart_macos.py up [NAME] [--softnet]
+    tart_macos.py up [NAME] [--softnet] [--repo PATH] [--no-repo] [--repo-ro]
     tart_macos.py mcp [NAME] [--server-name NAME]
     tart_macos.py status
     tart_macos.py down [NAME] [--golden]
 
 Commands:
     doctor   Check the host for tart, sshpass, Apple silicon, and free disk.
-    golden   One-time bootstrap of the golden VM (pull, size, TCC grants, uv).
-    up       Clone an ephemeral sandbox VM from golden and boot it headless.
-    mcp      Print the `claude mcp add` command to wire osascript-mcp to a VM.
+    golden   One-time bootstrap of the golden VM (pull, size, TCC grants, uv,
+             authorize the host's GitHub public keys for inbound SSH).
+    up       Clone an ephemeral sandbox VM from golden and boot it headless,
+             mounting a repo directory (default: cwd) at the guest's shared
+             'repo' folder.
+    mcp      Print the `claude mcp add` command to wire osascript-mcp to a
+             VM, with SSH agent forwarding (-A) so git push/pull against the
+             mounted repo authenticates using the host's agent -- no
+             private key is ever copied into the guest.
     status   List gg-* VMs, their state, and their IP.
     down     Stop and delete an ephemeral VM. Refuses the golden VM without
              --golden.
@@ -37,6 +43,7 @@ Note:
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -52,6 +59,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ENV_FILE = SCRIPT_DIR.parent / ".env"  # skills/macos-sandbox/.env, not cwd-relative
 
 SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+
+# macOS guests auto-mount every `--dir` share under this path, one subdirectory
+# per mount tag -- see https://github.com/openai/tart/blob/main/docs/quick-start.md
+GUEST_SHARED_ROOT = "/Volumes/My Shared Files"
 
 
 def load_config(env_file):
@@ -80,6 +91,7 @@ OSASCRIPT_MCP_REF_DEFAULT = config(
     "TART_MACOS_OSASCRIPT_MCP_REF", default="git+https://github.com/pythoninthegrass/osascript-mcp"
 )
 MCP_SERVER_NAME_DEFAULT = config("TART_MACOS_MCP_SERVER_NAME", default="osascript-vm")
+GITHUB_KEYS_USER_DEFAULT = config("TART_MACOS_GITHUB_KEYS_USER", default="pythoninthegrass")
 
 
 def run(argv, **kwargs):
@@ -89,9 +101,6 @@ def run(argv, **kwargs):
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)
     return subprocess.run(argv, **kwargs)
-
-
-# --- doctor ---
 
 
 TART_DYLD_BROKEN_HINT = (
@@ -169,9 +178,6 @@ def dhcp_lease_warning():
     return None
 
 
-# --- argv builders (pure, no subprocess calls -- easy to unit test) ---
-
-
 def build_clone_argv(image, dest):
     return ["tart", "clone", image, dest]
 
@@ -180,8 +186,17 @@ def build_set_argv(name, cpu, memory_mb, display):
     return ["tart", "set", name, "--cpu", str(cpu), "--memory", str(memory_mb), "--display", display]
 
 
-def build_run_argv(name, softnet=False):
+def build_dir_spec(tag, host_path, ro=False):
+    spec = f"{tag}:{host_path}"
+    if ro:
+        spec += ":ro"
+    return spec
+
+
+def build_run_argv(name, softnet=False, dirs=None):
     argv = ["tart", "run", name, "--no-graphics", "--no-audio", "--no-clipboard"]
+    for spec in dirs or []:
+        argv += ["--dir", spec]
     if softnet:
         argv.append("--net-softnet")
     return argv
@@ -203,33 +218,36 @@ def build_list_argv():
     return ["tart", "list"]
 
 
-def build_ssh_argv(ip, user, password, remote_cmd):
-    return ["sshpass", "-p", password, "ssh", *SSH_OPTS, f"{user}@{ip}", remote_cmd]
+def build_ssh_argv(ip, user, password, remote_cmd, forward_agent=False):
+    opts = [*SSH_OPTS, "-A"] if forward_agent else SSH_OPTS
+    return ["sshpass", "-p", password, "ssh", *opts, f"{user}@{ip}", remote_cmd]
 
 
 def build_scp_argv(local_path, ip, user, password, remote_path):
     return ["sshpass", "-p", password, "scp", *SSH_OPTS, str(local_path), f"{user}@{ip}:{remote_path}"]
 
 
+def build_github_keys_setup_cmd(github_user):
+    """No private key ever touches the guest. This authorizes the HOST's real
+    SSH key for inbound login (replacing the fixed admin/admin password) by
+    trusting whatever's already public on GITHUB_USER's account, and seeds
+    known_hosts so a git clone/push to github.com doesn't hang on the first
+    host-key prompt. Outbound git auth (actually pushing/pulling as that
+    user) comes from `-A` agent forwarding on the mcp connection, below --
+    the guest borrows the host's already-unlocked agent, it never gets a key
+    of its own."""
+    return (
+        f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && "
+        f"curl -fsSL https://github.com/{github_user}.keys >> ~/.ssh/authorized_keys && "
+        f"chmod 600 ~/.ssh/authorized_keys && "
+        f"ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null; true"
+    )
+
+
 def build_mcp_command(server_name, ip, user, password, osascript_mcp_ref):
     remote_cmd = f"~/.local/bin/uvx --from {osascript_mcp_ref} osascript-mcp"
-    return [
-        "claude",
-        "mcp",
-        "add",
-        server_name,
-        "--",
-        "sshpass",
-        "-p",
-        password,
-        "ssh",
-        *SSH_OPTS,
-        f"{user}@{ip}",
-        remote_cmd,
-    ]
-
-
-# --- VM lifecycle helpers ---
+    ssh_argv = build_ssh_argv(ip, user, password, remote_cmd, forward_agent=True)
+    return ["claude", "mcp", "add", server_name, "--", *ssh_argv]
 
 
 def clone_vm(src, dest):
@@ -240,11 +258,11 @@ def set_vm(name, cpu, memory_mb, display):
     return run(build_set_argv(name, cpu, memory_mb, display))
 
 
-def run_vm(name, softnet=False):
+def run_vm(name, softnet=False, dirs=None):
     """Boot NAME headless and detached -- returns immediately, the VM keeps
     running as a background process outside this script's lifetime."""
     return subprocess.Popen(
-        build_run_argv(name, softnet=softnet),
+        build_run_argv(name, softnet=softnet, dirs=dirs),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
@@ -299,7 +317,12 @@ def list_vms():
     return result.stdout
 
 
-# --- down: refuse to touch the golden VM by accident ---
+def vm_exists(name):
+    """Existence, not reachability -- a stopped VM still exists. Checking
+    `get_ip` instead (as `golden` used to) is wrong: a normal `golden` run
+    stops the VM at the end, so the very next run would see no IP, conclude
+    it doesn't exist, and re-clone into a name that's already taken."""
+    return any(name in line.split() for line in list_vms().splitlines())
 
 
 def down(name, golden_name, allow_golden=False):
@@ -312,9 +335,6 @@ def down(name, golden_name, allow_golden=False):
     if delete_result.returncode != 0:
         return EXIT_FAIL, f"tart delete {name} failed: {delete_result.stderr.strip()}"
     return EXIT_OK, f"deleted {name}"
-
-
-# --- CLI ---
 
 
 def parse_args(argv):
@@ -330,6 +350,9 @@ def parse_args(argv):
     p_up = sub.add_parser("up", help="clone and boot an ephemeral sandbox VM")
     p_up.add_argument("name", nargs="?", default=None)
     p_up.add_argument("--softnet", action="store_true", default=SOFTNET_DEFAULT)
+    p_up.add_argument("--repo", default=None, help="host directory to mount at the guest's shared 'repo' folder (default: cwd)")
+    p_up.add_argument("--no-repo", action="store_true", help="don't mount a repo directory")
+    p_up.add_argument("--repo-ro", action="store_true", help="mount the repo read-only")
 
     p_mcp = sub.add_parser("mcp", help="print the claude mcp add command for a VM")
     p_mcp.add_argument("name", nargs="?", default=None)
@@ -361,10 +384,15 @@ def cmd_doctor():
 
 def cmd_golden(args):
     name = GOLDEN_DEFAULT
-    existing_ip = get_ip(name)
-    if existing_ip is not None and not args.force:
-        print(f"OK: {name} already exists")
-        return EXIT_OK
+    if vm_exists(name):
+        if not args.force:
+            print(f"OK: {name} already exists")
+            return EXIT_OK
+        stop_vm(name)
+        delete_result = delete_vm(name)
+        if delete_result.returncode != 0:
+            print(f"FAIL: could not remove existing {name} for --force: {delete_result.stderr.strip()}", file=sys.stderr)
+            return EXIT_FAIL
 
     clone_result = clone_vm(IMAGE_DEFAULT, name)
     if clone_result.returncode != 0:
@@ -399,6 +427,16 @@ def cmd_golden(args):
         timeout_s=120,
     )
 
+    github_keys_result = ssh_run(
+        ip, SSH_USER_DEFAULT, SSH_PASSWORD_DEFAULT, build_github_keys_setup_cmd(GITHUB_KEYS_USER_DEFAULT)
+    )
+    if github_keys_result.returncode != 0:
+        print(
+            f"WARN: could not fetch https://github.com/{GITHUB_KEYS_USER_DEFAULT}.keys into the guest "
+            f"(host offline, or curl unreachable from the VM?): {github_keys_result.stderr.strip()}",
+            file=sys.stderr,
+        )
+
     stop_vm(name)
     print(f"OK: {name} bootstrapped ({ip})")
     if args.grant:
@@ -413,7 +451,13 @@ def cmd_up(args):
         print(f"FAIL: tart clone failed: {clone_result.stderr.strip()}", file=sys.stderr)
         return EXIT_FAIL
 
-    run_vm(name, softnet=args.softnet)
+    dirs = []
+    repo_path = None
+    if not args.no_repo:
+        repo_path = str(Path(args.repo).expanduser().resolve()) if args.repo else os.getcwd()
+        dirs.append(build_dir_spec("repo", repo_path, ro=args.repo_ro))
+
+    run_vm(name, softnet=args.softnet, dirs=dirs)
     ip = wait_for_ip(name, BOOT_TIMEOUT_DEFAULT)
     if ip is None:
         print(f"FAIL: {name} never got an IP within {BOOT_TIMEOUT_DEFAULT}s", file=sys.stderr)
@@ -422,7 +466,10 @@ def cmd_up(args):
         print(f"FAIL: SSH to {name} ({ip}) never came up", file=sys.stderr)
         return EXIT_FAIL
 
-    print(json.dumps({"name": name, "ip": ip}))
+    result = {"name": name, "ip": ip, "repo": repo_path}
+    if repo_path is not None:
+        result["repo_guest_path"] = f"{GUEST_SHARED_ROOT}/repo"
+    print(json.dumps(result))
     return EXIT_OK
 
 

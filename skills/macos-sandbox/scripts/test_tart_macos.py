@@ -40,9 +40,6 @@ def fake_completed(returncode=0, stdout="", stderr=""):
     return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
 
 
-# --- config precedence ---
-
-
 def test_config_default_when_nothing_set(monkeypatch):
     monkeypatch.delenv("TART_MACOS_CPU", raising=False)
     config = tart_macos.load_config(None)
@@ -75,9 +72,6 @@ def test_cli_flag_beats_env_default(monkeypatch):
     monkeypatch.setenv("TART_MACOS_SOFTNET", "true")
     args = tart_macos.parse_args(["up", "myvm", "--softnet"])
     assert args.softnet is True
-
-
-# --- argv builders ---
 
 
 def test_build_clone_argv():
@@ -123,11 +117,51 @@ def test_build_mcp_command():
     assert cmd[:4] == ["claude", "mcp", "add", "osascript-vm"]
     assert "sshpass" in cmd
     assert "admin@10.0.0.5" in cmd
+    assert "-A" in cmd  # forward the host's ssh-agent for git push/pull against the mounted repo
     joined = " ".join(cmd)
     assert "uvx --from git+https://github.com/pythoninthegrass/osascript-mcp osascript-mcp" in joined
 
 
-# --- doctor ---
+def test_build_ssh_argv_forward_agent():
+    argv = tart_macos.build_ssh_argv("10.0.0.5", "admin", "admin", "true", forward_agent=True)
+    assert "-A" in argv
+
+
+def test_build_ssh_argv_no_forward_agent_by_default():
+    argv = tart_macos.build_ssh_argv("10.0.0.5", "admin", "admin", "true")
+    assert "-A" not in argv
+
+
+def test_build_github_keys_setup_cmd():
+    cmd = tart_macos.build_github_keys_setup_cmd("pythoninthegrass")
+    assert "https://github.com/pythoninthegrass.keys" in cmd
+    assert "authorized_keys" in cmd
+    assert "ssh-keyscan github.com" in cmd
+    assert "known_hosts" in cmd
+
+
+def test_build_dir_spec_rw():
+    assert tart_macos.build_dir_spec("repo", "/path/to/repo") == "repo:/path/to/repo"
+
+
+def test_build_dir_spec_ro():
+    assert tart_macos.build_dir_spec("repo", "/path/to/repo", ro=True) == "repo:/path/to/repo:ro"
+
+
+def test_build_run_argv_with_dirs():
+    argv = tart_macos.build_run_argv("vm", dirs=["repo:/a", "ssh-host:/b:ro"])
+    assert argv == [
+        "tart",
+        "run",
+        "vm",
+        "--no-graphics",
+        "--no-audio",
+        "--no-clipboard",
+        "--dir",
+        "repo:/a",
+        "--dir",
+        "ssh-host:/b:ro",
+    ]
 
 
 def test_doctor_reports_missing_tart(monkeypatch):
@@ -169,9 +203,6 @@ def test_doctor_reports_tart_generic_failure(monkeypatch):
     assert any("permission denied" in p for p in problems)
 
 
-# --- dhcp_lease_warning ---
-
-
 def test_dhcp_lease_warning_when_plist_key_missing(monkeypatch):
     monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=1, stderr="does not exist"))
     assert tart_macos.dhcp_lease_warning() is not None
@@ -206,7 +237,56 @@ def test_doctor_ok_when_everything_present(monkeypatch, tmp_path):
     assert problems == []
 
 
-# --- down: refuses to delete the golden VM ---
+def test_vm_exists_true_when_name_is_a_field_in_list_output(monkeypatch):
+    monkeypatch.setattr(
+        tart_macos,
+        "run",
+        lambda argv, **k: fake_completed(returncode=0, stdout="Source  Name       State\nlocal   gg-golden  stopped\n"),
+    )
+    assert tart_macos.vm_exists("gg-golden") is True
+
+
+def test_vm_exists_false_when_absent(monkeypatch):
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0, stdout="Source  Name  State\n"))
+    assert tart_macos.vm_exists("gg-golden") is False
+
+
+def test_vm_exists_does_not_substring_match(monkeypatch):
+    """gg-golden-old must not make vm_exists('gg-golden') true."""
+    monkeypatch.setattr(
+        tart_macos,
+        "run",
+        lambda argv, **k: fake_completed(returncode=0, stdout="local  gg-golden-old  stopped\n"),
+    )
+    assert tart_macos.vm_exists("gg-golden") is False
+
+
+def test_cmd_golden_skips_when_already_exists(monkeypatch, capsys):
+    monkeypatch.setattr(tart_macos, "vm_exists", lambda name: True)
+    args = tart_macos.parse_args(["golden"])
+    rc = tart_macos.cmd_golden(args)
+    assert rc == tart_macos.EXIT_OK
+    assert "already exists" in capsys.readouterr().out
+
+
+def test_cmd_golden_force_removes_existing_before_recloning(monkeypatch):
+    calls = []
+    monkeypatch.setattr(tart_macos, "vm_exists", lambda name: True)
+    monkeypatch.setattr(tart_macos, "stop_vm", lambda name: calls.append(("stop", name)) or fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "delete_vm", lambda name: calls.append(("delete", name)) or fake_completed(returncode=0))
+    monkeypatch.setattr(
+        tart_macos,
+        "clone_vm",
+        lambda src, dest: calls.append(("clone", dest)) or fake_completed(returncode=1, stderr="stop-here"),
+    )
+    args = tart_macos.parse_args(["golden", "--force"])
+    rc = tart_macos.cmd_golden(args)
+    assert rc == tart_macos.EXIT_FAIL  # clone deliberately fails so the test doesn't need to mock the whole boot flow
+    assert calls == [
+        ("stop", tart_macos.GOLDEN_DEFAULT),
+        ("delete", tart_macos.GOLDEN_DEFAULT),
+        ("clone", tart_macos.GOLDEN_DEFAULT),
+    ]
 
 
 def test_down_refuses_golden_without_flag():
@@ -277,9 +357,6 @@ def test_down_tolerates_already_stopped(monkeypatch):
     ]
 
 
-# --- up: exercises the full clone -> run -> wait flow with a fake run() ---
-
-
 def test_up_builds_clone_from_golden_and_waits_for_ip_and_ssh(monkeypatch):
     calls = []
 
@@ -290,10 +367,10 @@ def test_up_builds_clone_from_golden_and_waits_for_ip_and_ssh(monkeypatch):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False: MagicMock())
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: MagicMock())
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
 
-    args = tart_macos.parse_args(["up", "gg-sbx-test"])
+    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
     rc = tart_macos.cmd_up(args)
 
     assert rc == tart_macos.EXIT_OK
@@ -307,15 +384,72 @@ def test_up_fails_when_ip_never_appears(monkeypatch):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False: MagicMock())
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: MagicMock())
     monkeypatch.setattr(tart_macos, "BOOT_TIMEOUT_DEFAULT", 0)
 
-    args = tart_macos.parse_args(["up", "gg-sbx-test"])
+    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
     rc = tart_macos.cmd_up(args)
     assert rc == tart_macos.EXIT_FAIL
 
 
-# --- mcp ---
+def test_up_mounts_cwd_as_repo_by_default(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        if argv[:2] == ["tart", "ip"]:
+            return fake_completed(returncode=0, stdout="10.0.0.9\n")
+        return fake_completed(returncode=0)
+
+    dirs_seen = []
+    monkeypatch.setattr(tart_macos, "run", fake_run)
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: dirs_seen.append(dirs) or MagicMock())
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+    monkeypatch.chdir(tmp_path)
+
+    args = tart_macos.parse_args(["up", "gg-sbx-test"])
+    rc = tart_macos.cmd_up(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert dirs_seen == [[tart_macos.build_dir_spec("repo", str(tmp_path.resolve()))]]
+    _ = calls
+
+
+def test_up_no_repo_flag_skips_mount(monkeypatch, tmp_path):
+    dirs_seen = []
+
+    def fake_run(argv, **kwargs):
+        if argv[:2] == ["tart", "ip"]:
+            return fake_completed(returncode=0, stdout="10.0.0.9\n")
+        return fake_completed(returncode=0)
+
+    monkeypatch.setattr(tart_macos, "run", fake_run)
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: dirs_seen.append(dirs) or MagicMock())
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+
+    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
+    rc = tart_macos.cmd_up(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert dirs_seen == [[]]
+
+
+def test_up_repo_ro_flag(monkeypatch, tmp_path):
+    dirs_seen = []
+
+    def fake_run(argv, **kwargs):
+        if argv[:2] == ["tart", "ip"]:
+            return fake_completed(returncode=0, stdout="10.0.0.9\n")
+        return fake_completed(returncode=0)
+
+    monkeypatch.setattr(tart_macos, "run", fake_run)
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: dirs_seen.append(dirs) or MagicMock())
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+
+    args = tart_macos.parse_args(["up", "gg-sbx-test", "--repo", str(tmp_path), "--repo-ro"])
+    rc = tart_macos.cmd_up(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert dirs_seen == [[f"repo:{tmp_path.resolve()}:ro"]]
 
 
 def test_cmd_mcp_requires_a_name():
