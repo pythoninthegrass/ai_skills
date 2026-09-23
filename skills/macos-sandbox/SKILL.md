@@ -49,6 +49,20 @@ Checks for `tart` (`brew install openai/tools/tart`), `sshpass`
 (`brew install cirruslabs/cli/sshpass`), Apple silicon, and free disk. Fix
 anything it flags before continuing -- it doesn't install for you.
 
+Also do this once per host, per Tart's own install notes -- the built-in
+macOS DHCP server hands out 86,400s leases by default, which exhausts the
+address pool if a host clones and boots many short-lived VMs in one day
+(more than one every ~6 minutes). `--softnet` works around this
+automatically; without it, shrink the lease time once:
+
+```bash
+sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.InternetSharing.default.plist bootpd -dict DHCPLeaseTimeSecs -int 600
+```
+
+Persists across reboots. If a fresh VM still can't get an IP afterward, the
+lease file may already be full of old 86,400s entries --
+`sudo rm /var/db/dhcpd_leases` and it's recreated on the next `tart run`.
+
 ```bash
 "${SKILL_DIR}/scripts/tart_macos.py" golden
 ```

@@ -64,6 +64,18 @@ Run the login flow in a sandboxed macOS VM, not on my real desktop.
 The agent runs `doctor` → `golden` (skipped if already built) → `up` →
 `mcp` → registers `osascript-vm` → drives the flow through it → `down`.
 
+## Host DHCP lease (one-time, per host)
+
+The built-in macOS DHCP server hands out 86,400s leases by default, which
+exhausts the address pool if you clone and boot many ephemeral VMs in one
+day. `up --softnet` works around this automatically; otherwise, per
+[Tart's install notes](https://github.com/openai/tart/blob/main/docs/faq.md#changing-the-default-dhcp-lease-time),
+shrink it once (persists across reboots):
+
+```bash
+sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.InternetSharing.default.plist bootpd -dict DHCPLeaseTimeSecs -int 600
+```
+
 ## Teardown
 
 A clone left running still counts against Apple's 2-concurrent-macOS-VM
