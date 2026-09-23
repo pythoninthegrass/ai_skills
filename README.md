@@ -22,15 +22,17 @@ npx skills add pythoninthegrass/ai_skills
 ```
 
 Useful flags: `-g` installs user-level instead of project-level, `-a
-claude-code,opencode,pi` targets specific agents, `-s gnhf` installs one
-skill by name, `-y` skips confirmation prompts, `--copy` copies files
-instead of symlinking. `npx skills list`, `npx skills update`, and `npx
-skills remove` manage what's installed.
+claude-code,opencode,pi` targets specific agents, `-s <name>` installs one
+skill by name (e.g. `-s gnhf` or `-s macos-sandbox` — this repo has both),
+`-y` skips confirmation prompts, `--copy` copies files instead of
+symlinking. `npx skills list`, `npx skills update`, and `npx skills remove`
+manage what's installed.
 
 To try a skill without installing it:
 
 ```bash
 npx skills use pythoninthegrass/ai_skills@gnhf | claude
+npx skills use pythoninthegrass/ai_skills@macos-sandbox | claude
 ```
 
 ### Update
@@ -61,9 +63,14 @@ both auto-load `~/.agents/skills/`, and opencode also auto-loads
 ```bash
 git clone https://github.com/pythoninthegrass/ai_skills.git ~/git/ai_skills
 mkdir -p ~/.agents/skills ~/.claude/skills
-ln -s ~/git/ai_skills/skills/gnhf ~/.agents/skills/gnhf   # pi, opencode
-ln -s ~/git/ai_skills/skills/gnhf ~/.claude/skills/gnhf   # Claude Code
+for skill in gnhf macos-sandbox; do
+  ln -s ~/git/ai_skills/skills/$skill ~/.agents/skills/$skill   # pi, opencode
+  ln -s ~/git/ai_skills/skills/$skill ~/.claude/skills/$skill   # Claude Code
+done
 ```
+
+Symlink just one skill by dropping the loop and naming it directly, e.g.
+`ln -s ~/git/ai_skills/skills/macos-sandbox ~/.claude/skills/macos-sandbox`.
 
 Documented discovery locations, per agent (see each agent's own docs for
 the current, authoritative list — these locations are more stable than any
@@ -80,8 +87,8 @@ CLI flags):
 Skills are scanned at startup — restart the agent (or start a new session)
 after installing. Then:
 
-- Claude Code: run `/gnhf`
-- pi: run `/skill:gnhf`
+- Claude Code: run `/gnhf` or `/macos-sandbox`
+- pi: run `/skill:gnhf` or `/skill:macos-sandbox`
 - opencode: mention what you want done; opencode picks the skill up from
   its description
 - Either way: `npx skills list -g` shows what the CLI has installed
