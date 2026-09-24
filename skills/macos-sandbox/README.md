@@ -191,21 +191,31 @@ Events, Safari, and Terminal) to SSH-driven `osascript` via a direct TCC
 database write -- no SIP disable needed. Confirmed live: `tell application
 "Terminal" to do script "..."` works from a fresh, unpatched `up` clone.
 
-**Screen Capture has the same seed-doesn't-take-effect gap as
-Accessibility below -- confirmed live, not yet fixed.** `screencapture`
-appears to work (exits 0, writes a file) but only ever captures the
-desktop wallpaper and menu bar, never real window content -- this is
-macOS's standard no-permission fallback, not a crash. Proof:
-`screencapture -l <windowid>` (capture one specific window, which has no
-degraded fallback) hard-fails with `could not create image from window`,
-on both a headless and a `--gui` boot, with `kTCCServiceScreenCapture`
-already showing `auth_value=2` (allowed) in the database for both
-`/usr/bin/osascript` and `/usr/libexec/sshd-keygen-wrapper`. **Don't trust
-a screenshot from this skill to show real app content yet** -- it will
-render only wallpaper + menu bar. The Accessibility fix below (leave the
-row unset, trigger a real dialog, click through once, bake it into golden)
-is the likely fix here too, for Screen Recording instead of Accessibility,
-but that hasn't been attempted yet.
+**Screen Capture needed its own two-step fix, different from
+Accessibility's, confirmed live and fixed in `golden`.** A seeded
+`kTCCServiceScreenCapture` row alone doesn't work: `screencapture` exits 0
+but only ever renders desktop wallpaper + menu bar (macOS's standard
+no-permission fallback, not a crash), and unlike Accessibility, the seeded
+row doesn't even make the client appear in System Settings' list for
+manual toggling. Two manual steps fixed it:
+
+1. `+`-add `/usr/libexec/sshd-keygen-wrapper` directly (Cmd+Shift+G for a
+   raw path) under Privacy & Security → Screen Recording -- accepted,
+   enabled by default. Fixes `screencapture -l <windowid>` (previously a
+   hard `could not create image from window` failure).
+2. Run `screencapture -x` (whole-screen) once from the guest -- this
+   triggers a *second*, separate dialog: `"com.apple.sshd-session" is
+   requesting to bypass the system private window picker and directly
+   access your screen and audio`. Click **Allow**. This grant isn't stored
+   in any `TCC.db` table (checked all of them, before and after) -- it
+   can't be pre-seeded, only clicked through once.
+
+Both steps are now done on `macos-golden` itself and confirmed inherited
+by a completely fresh, unpatched clone -- real window content in
+screenshots, zero manual steps needed per-session. `golden --grant`
+doesn't yet automate step 1's trigger (no known way to surface it without
+the manual `+`); it remains a true one-time-by-hand step into golden, like
+Accessibility's fallback.
 
 **Accessibility is deliberately left unseeded** -- confirmed live in both
 directions: a pre-written `kTCCServiceAccessibility` row (`auth_value=2`,

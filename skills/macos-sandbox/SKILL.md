@@ -147,19 +147,10 @@ to rebuild it). On first run it:
    the per-user TCC database. Accessibility is deliberately left unseeded
    here -- see below.
 
-   **Known gap, found live via a real e2e run (TASK-016 in
-   swords_of_glass, driving DOSBox-X): Screen Capture has the identical
-   seed-doesn't-take-effect problem as Accessibility, unfixed.**
-   `screencapture` exits 0 but only ever renders desktop wallpaper + menu
-   bar, never real window content -- macOS's standard silent fallback when
-   Screen Recording isn't actually granted. `screencapture -l <windowid>`
-   (no degraded fallback) confirms it: hard fails with `could not create
-   image from window`, on both headless and `--gui` boots, despite
-   `kTCCServiceScreenCapture` showing `auth_value=2` in the database.
-   **Don't trust a screenshot from this skill to show real app content
-   yet.** The Accessibility fix below is the likely template (leave the
-   row unset, find the trigger that produces a real Screen Recording
-   dialog, click through once into golden) but hasn't been attempted.
+   **Screen Capture needs two further one-time manual steps in `golden`,
+   confirmed live and now fixed -- see below.** A seeded row alone isn't
+   enough, and (unlike Accessibility) doesn't even make the client listed
+   for manual toggling.
 5. Installs `uv` in the guest.
 6. Authorizes `TART_MACOS_GITHUB_KEYS_USER`'s (default `pythoninthegrass`)
    GitHub public keys for inbound SSH (`curl .../pythoninthegrass.keys >>
@@ -211,6 +202,36 @@ to pre-approve TCC grants without any manual step, and was tried first:
 refuses outright (`profiles tool no longer supports installs`) -- Apple
 removed CLI profile installation; it now needs genuine MDM enrollment, out
 of scope for a standalone sandbox VM.
+
+**Screen Capture needs its own, different two-step manual dance in
+`golden --grant`, confirmed live and fixed.** Unlike Accessibility, a
+seeded `kTCCServiceScreenCapture` row does *not* make the client appear in
+System Settings → Privacy & Security → Screen Recording, so:
+
+1. Add `/usr/libexec/sshd-keygen-wrapper` by hand: `+` → type
+   `/usr/libexec/sshd-keygen-wrapper` (Cmd+Shift+G to enter a raw path).
+   It's accepted and enabled by default. Without this,
+   `screencapture -l <windowid>` hard-fails with `could not create image
+   from window`.
+2. Run `screencapture -x` (whole-screen, not `-l`) once from the guest --
+   this triggers a *second*, separate, newer consent dialog: `"com.apple.
+   sshd-session" is requesting to bypass the system private window picker
+   and directly access your screen and audio`, with Allow/Open-System-
+   Settings buttons. Click **Allow**. Until this is granted,
+   `screencapture -x` exits 0 but silently degrades to desktop-wallpaper-
+   plus-menu-bar-only content -- no error, so it's easy to miss.
+
+This second grant is **not stored anywhere in `TCC.db`** -- every table
+(`access`, `access_overrides`, `active_policy`, `admin`, `expired`,
+`policies`) was checked before and after granting it; nothing changed. It
+can't be pre-seeded or scripted, only granted once by clicking through,
+same as Accessibility -- but it persists once baked into a stopped golden
+VM's disk and every clone inherits it. Verified end-to-end on
+`macos-golden` itself: a fresh, completely unpatched clone now produces
+screenshots with genuine window content, no manual steps needed on that
+clone. `golden --grant` doesn't yet automate the *first* dialog
+(there is no known trigger for it beyond the manual `+`); it's a true
+one-time-by-hand step, same as Accessibility's fallback path.
 
 Sending Apple Events to any app other than System Events or Safari still
 prompts once the first time it happens. If a task needs another app,

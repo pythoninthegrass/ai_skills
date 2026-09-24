@@ -29,6 +29,29 @@
 # before leaving the VM running -- watch the window and click through when it
 # appears (it appears immediately, but hasn't been observed to auto-dismiss
 # quickly either; still, don't dawdle).
+#
+# kTCCServiceScreenCapture (still seeded below) needs TWO further manual
+# steps beyond this script, confirmed live -- there is no known way to
+# automate either yet:
+#   1. The seeded row does NOT make the client appear in System Settings ->
+#      Privacy & Security -> Screen Recording (unlike Accessibility, where a
+#      seeded row does list it). It must be added by hand: '+' ->
+#      /usr/libexec/sshd-keygen-wrapper (accepted as a raw path, enabled by
+#      default on add). Without this, `screencapture -l <windowid>` hard
+#      fails with "could not create image from window".
+#   2. Even with that, whole-screen `screencapture -x` silently degrades to
+#      desktop-wallpaper+menu-bar-only (macOS's standard no-permission
+#      fallback, not an error) until a SEPARATE, newer consent layer is
+#      granted: running `screencapture -x` for the first time (not any
+#      osascript/AppleScript call -- that was a false lead) triggers a real
+#      dialog: "com.apple.sshd-session is requesting to bypass the system
+#      private window picker and directly access your screen and audio" with
+#      Allow/Open-System-Settings buttons. This grant is NOT stored anywhere
+#      in TCC.db (checked every table: access, access_overrides,
+#      active_policy, admin, expired, policies -- all empty or irrelevant
+#      after granting it), so it cannot be pre-seeded or scripted at all;
+#      clicking "Allow" once is the only known way, and it persists once
+#      baked into a stopped golden VM's disk, inherited by every clone.
 set -euo pipefail
 
 resolve_user_tcc_database() {
@@ -112,8 +135,12 @@ update_tcc_database() {
 main() {
   local database
   database="$(resolve_user_tcc_database)"
+  # Upstream writes both the system and per-user TCC.db; an earlier trim of
+  # this file dropped the system write entirely. Restored for fidelity, even
+  # though it wasn't the cause of the ScreenCapture gap documented above.
+  update_tcc_database "/Library/Application Support/com.apple.TCC/TCC.db"
   update_tcc_database "$database"
-  echo "Granted ScreenCapture/PostEvent/AppleEvents (System Events/Safari/Terminal) to sshd-keygen-wrapper and osascript in: $database (Accessibility deliberately left unset -- see header comment)"
+  echo "Granted ScreenCapture/PostEvent/AppleEvents (System Events/Safari/Terminal) to sshd-keygen-wrapper and osascript in: $database (Accessibility and full ScreenCapture deliberately left unset -- see header comment)"
 }
 
 main "$@"
