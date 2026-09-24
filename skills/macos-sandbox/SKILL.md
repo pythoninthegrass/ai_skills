@@ -127,7 +127,7 @@ lease file may already be full of old 86,400s entries --
 "${SKILL_DIR}/scripts/tart_macos.py" golden
 ```
 
-Idempotent -- if `gg-golden` already exists this is a no-op (pass `--force`
+Idempotent -- if `macos-golden` already exists this is a no-op (pass `--force`
 to rebuild it). On first run it:
 
 1. Clones `ghcr.io/cirruslabs/macos-sequoia-vanilla:15.7.7` (vanilla, no
@@ -151,10 +151,10 @@ to rebuild it). On first run it:
    GitHub public keys for inbound SSH (`curl .../pythoninthegrass.keys >>
    ~/.ssh/authorized_keys`) and seeds `known_hosts` for `github.com` --
    **no private key is ever copied into the guest.** This is baked into
-   `gg-golden` once, so every ephemeral clone inherits it from first boot.
+   `macos-golden` once, so every ephemeral clone inherits it from first boot.
 7. Stops the VM.
 
-`golden` is idempotent by checking whether `gg-golden` exists at all
+`golden` is idempotent by checking whether `macos-golden` exists at all
 (`tart list`), not whether it's currently reachable -- an earlier version of
 this check used `tart ip`, which only works while a VM is running, so a
 normal `golden` run (which ends by stopping the VM) would make the *next*
@@ -164,7 +164,7 @@ that was already taken.
 **If step 4 is refused** (a locked-down TCC database, or a macOS point
 release that moved something): re-run with `--grant`, which boots the VM
 with a display so the permissions can be granted once by hand in System
-Settings → Privacy & Security. They persist in `gg-golden`, so every clone
+Settings → Privacy & Security. They persist in `macos-golden`, so every clone
 inherits them -- this is a one-time fallback, not a per-session step.
 
 **Accessibility needs this `--grant` path -- there's a real, working happy
@@ -200,7 +200,7 @@ of scope for a standalone sandbox VM.
 
 Sending Apple Events to any app other than System Events or Safari still
 prompts once the first time it happens. If a task needs another app,
-trigger that prompt once inside `gg-golden` (via `--grant`) so clones
+trigger that prompt once inside `macos-golden` (via `--grant`) so clones
 inherit the grant too.
 
 ## Per-session: clone, wire up, tear down
@@ -211,7 +211,7 @@ NAME=$(echo "$RES" | jq -r .name)
 IP=$(echo "$RES" | jq -r .ip)
 ```
 
-Clones `gg-golden` into a fresh ephemeral VM (`gg-sbx-<timestamp>` unless
+Clones `macos-golden` into a fresh ephemeral VM (`macos-sbx-<timestamp>` unless
 you pass a name), boots it headless (`--no-graphics --no-audio
 --no-clipboard`), mounts the current directory (or `--repo PATH`) at the
 guest's shared `repo` folder -- `/Volumes/My Shared Files/repo`, a live
@@ -259,7 +259,7 @@ deliberate, don't work around it by naming the golden VM's own name as an
 "${SKILL_DIR}/scripts/tart_macos.py" status
 ```
 
-Lists `gg-*` VMs and their state at any point -- useful before `up` if a
+Lists `macos-*` VMs and their state at any point -- useful before `up` if a
 previous session's teardown didn't run.
 
 ## Optional: `run.py` + `playbook.yml` for repeatable per-repo provisioning
@@ -308,7 +308,7 @@ name fails fast with `FAIL: '<name>' is locked...` instead of interleaving
 `tart clone`/`set`/`run`/`stop`/`delete` calls against the same VM --
 discovered for real when a disowned background `golden` outlived its
 wrapper and a second `golden` was launched before noticing, racing both
-against `gg-golden`.
+against `macos-golden`.
 
 ## Bundled scripts
 

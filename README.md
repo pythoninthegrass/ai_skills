@@ -10,7 +10,7 @@ directory under `skills/`.
 | Skill  | Description |
 | ------ | ----------- |
 | [gnhf](skills/gnhf/SKILL.md) | Launch a bounded, low-supervision overnight coding agent run against one well-specced task, in an isolated worktree. |
-| [macos-sandbox](skills/macos-sandbox/SKILL.md) | Spin up the smallest usable macOS 27 (Golden Gate) VM with Tart and wire osascript-mcp's desktop automation into it over SSH, sandboxed away from the host desktop. |
+| [macos-sandbox](skills/macos-sandbox/SKILL.md) | Spin up the smallest usable macOS VM with Tart and wire osascript-mcp's desktop automation into it over SSH, sandboxed away from the host desktop. |
 
 ## Install
 

@@ -39,8 +39,8 @@ image-independent tart-version issue on the same older hosts.
 
 ## Parameters
 
-- **`up [name]`** -- clones `gg-golden` into `name` (default
-  `gg-sbx-<timestamp>`), boots it headless, mounts a repo directory (default
+- **`up [name]`** -- clones `macos-golden` into `name` (default
+  `macos-sbx-<timestamp>`), boots it headless, mounts a repo directory (default
   cwd) at the guest's shared `repo` folder, prints `{"name", "ip", "repo",
   "repo_guest_path"}` once SSH is reachable. `--no-repo` skips the mount,
   `--repo PATH` overrides it, `--repo-ro` mounts read-only. `--softnet` boots
@@ -52,7 +52,7 @@ image-independent tart-version issue on the same older hosts.
   name unless `--golden` is passed.
 - **`golden`** -- one-time bootstrap; idempotent. `--force` rebuilds it,
   `--grant` boots with a display for a manual TCC-permission fallback.
-- **`status`** -- lists `gg-*` VMs and their state.
+- **`status`** -- lists `macos-*` VMs and their state.
 - **`doctor`** -- checks `tart`, `sshpass`, Apple silicon, free disk, and
   (only if `TART_MACOS_IMAGE` names a Tahoe+-only image) the host's own
   macOS version, see above.
@@ -71,7 +71,7 @@ gitignored). A CLI flag always wins over either.
 | `TART_MACOS_CPU` | `2` |
 | `TART_MACOS_MEMORY_MB` | `4096` |
 | `TART_MACOS_DISPLAY` | `1280x800` |
-| `TART_MACOS_GOLDEN` | `gg-golden` |
+| `TART_MACOS_GOLDEN` | `macos-golden` |
 | `TART_MACOS_SOFTNET` | `false` |
 | `TART_MACOS_SSH_USER` | `admin` |
 | `TART_MACOS_SSH_PASSWORD` | `admin` |
@@ -150,7 +150,7 @@ skips provisioning (warns, doesn't fail) if the repo has no `playbook.yml`.
 - **Inbound (host → guest):** `golden` fetches
   `https://github.com/<TART_MACOS_GITHUB_KEYS_USER>.keys` and appends it to
   the guest's `~/.ssh/authorized_keys`, and seeds `known_hosts` for
-  `github.com`. This is baked into `gg-golden` once, so every clone inherits
+  `github.com`. This is baked into `macos-golden` once, so every clone inherits
   it. Only public data ever leaves the host.
 - **Outbound (guest → GitHub, for git push/pull against the mounted repo):**
   `mcp`'s registration command passes `-A` (agent forwarding), so git
@@ -170,7 +170,7 @@ done; `status` shows anything left over from an interrupted session.
 with `'<name>' is locked...` rather than interleaving `tart` calls against
 the same VM from two invocations. Discovered for real: a disowned
 background `golden` outlived its wrapper, and a second `golden` got started
-before that was noticed, racing both against `gg-golden`.
+before that was noticed, racing both against `macos-golden`.
 
 ## Sizing note
 

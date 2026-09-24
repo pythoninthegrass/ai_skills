@@ -45,16 +45,16 @@ def fake_completed(returncode=0, stdout="", stderr=""):
 
 def test_state_round_trip(tmp_path):
     assert run_mod.read_state(tmp_path) is None
-    run_mod.write_state(tmp_path, "gg-sbx-1", "10.0.0.9")
+    run_mod.write_state(tmp_path, "macos-sbx-1", "10.0.0.9")
     state = run_mod.read_state(tmp_path)
-    assert state["name"] == "gg-sbx-1"
+    assert state["name"] == "macos-sbx-1"
     assert state["ip"] == "10.0.0.9"
     assert "started_at" in state
 
 
 def test_build_inventory_shape():
-    inv = run_mod.build_inventory("gg-sbx-1", "10.0.0.9", "admin")
-    assert inv["sandbox"]["hosts"] == {"gg-sbx-1": {"ansible_host": "10.0.0.9"}}
+    inv = run_mod.build_inventory("macos-sbx-1", "10.0.0.9", "admin")
+    assert inv["sandbox"]["hosts"] == {"macos-sbx-1": {"ansible_host": "10.0.0.9"}}
     assert inv["sandbox"]["vars"]["ansible_user"] == "admin"
     assert "ansible_ssh_pass" not in inv["sandbox"]["vars"]
     assert "ansible_ssh_private_key_file" not in inv["sandbox"]["vars"]
@@ -81,7 +81,7 @@ def test_cmd_up_skips_provisioning_without_playbook(monkeypatch, tmp_path, capsy
     monkeypatch.setattr(
         run_mod,
         "run_tart_macos",
-        lambda argv, **k: fake_completed(returncode=0, stdout=json.dumps({"name": "gg-sbx-1", "ip": "10.0.0.9"})),
+        lambda argv, **k: fake_completed(returncode=0, stdout=json.dumps({"name": "macos-sbx-1", "ip": "10.0.0.9"})),
     )
     run_playbook_mock = MagicMock()
     monkeypatch.setattr(run_mod, "run_playbook", run_playbook_mock)
@@ -93,7 +93,7 @@ def test_cmd_up_skips_provisioning_without_playbook(monkeypatch, tmp_path, capsy
     run_playbook_mock.assert_not_called()
     assert "no playbook found" in capsys.readouterr().err
     state = run_mod.read_state(tmp_path)
-    assert state["name"] == "gg-sbx-1"
+    assert state["name"] == "macos-sbx-1"
     assert state["ip"] == "10.0.0.9"
 
 
@@ -102,7 +102,7 @@ def test_cmd_up_runs_playbook_when_present(monkeypatch, tmp_path):
     monkeypatch.setattr(
         run_mod,
         "run_tart_macos",
-        lambda argv, **k: fake_completed(returncode=0, stdout=json.dumps({"name": "gg-sbx-1", "ip": "10.0.0.9"})),
+        lambda argv, **k: fake_completed(returncode=0, stdout=json.dumps({"name": "macos-sbx-1", "ip": "10.0.0.9"})),
     )
     calls = []
     monkeypatch.setattr(run_mod, "run_playbook", lambda path, inv: calls.append((path, inv)) or 0)
@@ -120,7 +120,7 @@ def test_cmd_up_fails_when_playbook_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(
         run_mod,
         "run_tart_macos",
-        lambda argv, **k: fake_completed(returncode=0, stdout=json.dumps({"name": "gg-sbx-1", "ip": "10.0.0.9"})),
+        lambda argv, **k: fake_completed(returncode=0, stdout=json.dumps({"name": "macos-sbx-1", "ip": "10.0.0.9"})),
     )
     monkeypatch.setattr(run_mod, "run_playbook", lambda path, inv: 1)
 
@@ -130,7 +130,7 @@ def test_cmd_up_fails_when_playbook_fails(monkeypatch, tmp_path):
 
 
 def test_cmd_down_uses_state_file(monkeypatch, tmp_path):
-    run_mod.write_state(tmp_path, "gg-sbx-1", "10.0.0.9")
+    run_mod.write_state(tmp_path, "macos-sbx-1", "10.0.0.9")
     calls = []
     monkeypatch.setattr(run_mod, "run_tart_macos", lambda argv, **k: calls.append(argv) or fake_completed(returncode=0))
 
@@ -138,7 +138,7 @@ def test_cmd_down_uses_state_file(monkeypatch, tmp_path):
     rc = run_mod.cmd_down(args)
 
     assert rc == run_mod.tart_macos.EXIT_OK
-    assert calls == [["down", "gg-sbx-1"]]
+    assert calls == [["down", "macos-sbx-1"]]
     assert not run_mod.state_path(tmp_path).exists()
 
 

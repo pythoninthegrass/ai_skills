@@ -31,7 +31,7 @@ Commands:
              VM, with SSH agent forwarding (-A) so git push/pull against the
              mounted repo authenticates using the host's agent -- no
              private key is ever copied into the guest.
-    status   List gg-* VMs, their state, and their IP.
+    status   List macos-* VMs, their state, and their IP.
     down     Stop and delete an ephemeral VM. Refuses the golden VM without
              --golden.
 
@@ -80,7 +80,7 @@ def vm_lock(name, shared=False):
     racing an `up` clone) can otherwise interleave `tart clone`/`set`/`run`/
     `stop`/`delete` calls against the same VM. Observed for real: a disowned
     background `golden` outlived its wrapper and a second `golden` was
-    started before noticing, racing both against `gg-golden`.
+    started before noticing, racing both against `macos-golden`.
 
     `shared=True` (multiple concurrent `up`s cloning FROM golden) only
     excludes a concurrent exclusive holder (`golden` itself) -- it doesn't
@@ -122,7 +122,7 @@ IMAGE_DEFAULT = config("TART_MACOS_IMAGE", default="ghcr.io/cirruslabs/macos-seq
 CPU_DEFAULT = config("TART_MACOS_CPU", default=2, cast=int)
 MEMORY_MB_DEFAULT = config("TART_MACOS_MEMORY_MB", default=4096, cast=int)
 DISPLAY_DEFAULT = config("TART_MACOS_DISPLAY", default="1280x800")
-GOLDEN_DEFAULT = config("TART_MACOS_GOLDEN", default="gg-golden")
+GOLDEN_DEFAULT = config("TART_MACOS_GOLDEN", default="macos-golden")
 SOFTNET_DEFAULT = config("TART_MACOS_SOFTNET", default=False, cast=bool)
 SSH_USER_DEFAULT = config("TART_MACOS_SSH_USER", default="admin")
 SSH_PASSWORD_DEFAULT = config("TART_MACOS_SSH_PASSWORD", default="admin")
@@ -502,7 +502,7 @@ def parse_args(argv):
     p_mcp.add_argument("name", nargs="?", default=None)
     p_mcp.add_argument("--server-name", default=MCP_SERVER_NAME_DEFAULT)
 
-    sub.add_parser("status", help="list gg-* VMs")
+    sub.add_parser("status", help="list macos-* VMs")
 
     p_down = sub.add_parser("down", help="stop and delete an ephemeral VM")
     p_down.add_argument("name", nargs="?", default=None)
@@ -626,7 +626,7 @@ def _finish_golden(name, ip, args):
 
 
 def cmd_up(args):
-    name = args.name or f"gg-sbx-{int(time.time())}"
+    name = args.name or f"macos-sbx-{int(time.time())}"
     try:
         with vm_lock(GOLDEN_DEFAULT, shared=True):  # exclude a concurrent golden rebuild, not other `up`s
             with vm_lock(name):

@@ -47,7 +47,7 @@ def isolated_lock_dir(monkeypatch, tmp_path):
     this would otherwise race a real concurrent invocation on this machine
     (caught live: a real `golden --force` running in the background made
     several `up`-path tests fail because they contended for the same real
-    /tmp/tart-macos-sandbox-gg-golden.lock)."""
+    /tmp/tart-macos-sandbox-macos-golden.lock)."""
     monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
 
 
@@ -304,24 +304,24 @@ def test_vm_exists_true_when_name_is_a_field_in_list_output(monkeypatch):
     monkeypatch.setattr(
         tart_macos,
         "run",
-        lambda argv, **k: fake_completed(returncode=0, stdout="Source  Name       State\nlocal   gg-golden  stopped\n"),
+        lambda argv, **k: fake_completed(returncode=0, stdout="Source  Name       State\nlocal   macos-golden  stopped\n"),
     )
-    assert tart_macos.vm_exists("gg-golden") is True
+    assert tart_macos.vm_exists("macos-golden") is True
 
 
 def test_vm_exists_false_when_absent(monkeypatch):
     monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0, stdout="Source  Name  State\n"))
-    assert tart_macos.vm_exists("gg-golden") is False
+    assert tart_macos.vm_exists("macos-golden") is False
 
 
 def test_vm_exists_does_not_substring_match(monkeypatch):
-    """gg-golden-old must not make vm_exists('gg-golden') true."""
+    """macos-golden-old must not make vm_exists('macos-golden') true."""
     monkeypatch.setattr(
         tart_macos,
         "run",
-        lambda argv, **k: fake_completed(returncode=0, stdout="local  gg-golden-old  stopped\n"),
+        lambda argv, **k: fake_completed(returncode=0, stdout="local  macos-golden-old  stopped\n"),
     )
-    assert tart_macos.vm_exists("gg-golden") is False
+    assert tart_macos.vm_exists("macos-golden") is False
 
 
 def test_cmd_golden_skips_when_already_exists(monkeypatch, capsys):
@@ -386,33 +386,33 @@ def test_cmd_golden_fails_when_uv_install_fails(monkeypatch, tmp_path):
 
 def test_vm_lock_blocks_concurrent_exclusive(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
-    with tart_macos.vm_lock("gg-golden"), pytest.raises(tart_macos.VMLocked), tart_macos.vm_lock("gg-golden"):
+    with tart_macos.vm_lock("macos-golden"), pytest.raises(tart_macos.VMLocked), tart_macos.vm_lock("macos-golden"):
         pass
 
 
 def test_vm_lock_released_on_exit(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
-    with tart_macos.vm_lock("gg-golden"):
+    with tart_macos.vm_lock("macos-golden"):
         pass
-    with tart_macos.vm_lock("gg-golden"):  # would raise if the first lock leaked
+    with tart_macos.vm_lock("macos-golden"):  # would raise if the first lock leaked
         pass
 
 
 def test_vm_lock_different_names_dont_conflict(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
-    with tart_macos.vm_lock("gg-golden"), tart_macos.vm_lock("gg-sbx-1"):
+    with tart_macos.vm_lock("macos-golden"), tart_macos.vm_lock("macos-sbx-1"):
         pass
 
 
 def test_vm_lock_shared_readers_dont_conflict(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
-    with tart_macos.vm_lock("gg-golden", shared=True), tart_macos.vm_lock("gg-golden", shared=True):
+    with tart_macos.vm_lock("macos-golden", shared=True), tart_macos.vm_lock("macos-golden", shared=True):
         pass
 
 
 def test_vm_lock_shared_blocked_by_exclusive(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
-    with tart_macos.vm_lock("gg-golden"), pytest.raises(tart_macos.VMLocked), tart_macos.vm_lock("gg-golden", shared=True):
+    with tart_macos.vm_lock("macos-golden"), pytest.raises(tart_macos.VMLocked), tart_macos.vm_lock("macos-golden", shared=True):
         pass
 
 
@@ -426,7 +426,7 @@ def test_cmd_golden_fails_fast_when_locked(monkeypatch, tmp_path):
 
 def test_cmd_up_fails_fast_when_golden_exclusively_locked(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
-    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
+    args = tart_macos.parse_args(["up", "macos-sbx-test", "--no-repo"])
     with tart_macos.vm_lock(tart_macos.GOLDEN_DEFAULT):
         rc = tart_macos.cmd_up(args)
     assert rc == tart_macos.EXIT_FAIL
@@ -434,14 +434,14 @@ def test_cmd_up_fails_fast_when_golden_exclusively_locked(monkeypatch, tmp_path)
 
 def test_cmd_down_fails_fast_when_locked(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
-    args = tart_macos.parse_args(["down", "gg-sbx-test"])
-    with tart_macos.vm_lock("gg-sbx-test"):
+    args = tart_macos.parse_args(["down", "macos-sbx-test"])
+    with tart_macos.vm_lock("macos-sbx-test"):
         rc = tart_macos.cmd_down(args)
     assert rc == tart_macos.EXIT_FAIL
 
 
 def test_down_refuses_golden_without_flag():
-    rc, message = tart_macos.down("gg-golden", "gg-golden", allow_golden=False)
+    rc, message = tart_macos.down("macos-golden", "macos-golden", allow_golden=False)
     assert rc == tart_macos.EXIT_USAGE
     assert "golden" in message.lower()
 
@@ -454,11 +454,11 @@ def test_down_allows_golden_with_flag(monkeypatch):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    rc, message = tart_macos.down("gg-golden", "gg-golden", allow_golden=True)
+    rc, message = tart_macos.down("macos-golden", "macos-golden", allow_golden=True)
     assert rc == tart_macos.EXIT_OK
     assert calls == [
-        tart_macos.build_stop_argv("gg-golden"),
-        tart_macos.build_delete_argv("gg-golden"),
+        tart_macos.build_stop_argv("macos-golden"),
+        tart_macos.build_delete_argv("macos-golden"),
     ]
 
 
@@ -470,11 +470,11 @@ def test_down_deletes_ephemeral_vm(monkeypatch):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    rc, message = tart_macos.down("gg-sbx-123", "gg-golden", allow_golden=False)
+    rc, message = tart_macos.down("macos-sbx-123", "macos-golden", allow_golden=False)
     assert rc == tart_macos.EXIT_OK
     assert calls == [
-        tart_macos.build_stop_argv("gg-sbx-123"),
-        tart_macos.build_delete_argv("gg-sbx-123"),
+        tart_macos.build_stop_argv("macos-sbx-123"),
+        tart_macos.build_delete_argv("macos-sbx-123"),
     ]
 
 
@@ -485,7 +485,7 @@ def test_down_reports_stop_failure(monkeypatch):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    rc, message = tart_macos.down("gg-sbx-123", "gg-golden", allow_golden=False)
+    rc, message = tart_macos.down("macos-sbx-123", "macos-golden", allow_golden=False)
     assert rc == tart_macos.EXIT_FAIL
     assert "boom" in message
 
@@ -500,11 +500,11 @@ def test_down_tolerates_already_stopped(monkeypatch):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    rc, _ = tart_macos.down("gg-sbx-123", "gg-golden", allow_golden=False)
+    rc, _ = tart_macos.down("macos-sbx-123", "macos-golden", allow_golden=False)
     assert rc == tart_macos.EXIT_OK
     assert calls == [
-        tart_macos.build_stop_argv("gg-sbx-123"),
-        tart_macos.build_delete_argv("gg-sbx-123"),
+        tart_macos.build_stop_argv("macos-sbx-123"),
+        tart_macos.build_delete_argv("macos-sbx-123"),
     ]
 
 
@@ -521,11 +521,11 @@ def test_up_builds_clone_from_golden_and_waits_for_ip_and_ssh(monkeypatch):
     monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: MagicMock())
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
 
-    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
+    args = tart_macos.parse_args(["up", "macos-sbx-test", "--no-repo"])
     rc = tart_macos.cmd_up(args)
 
     assert rc == tart_macos.EXIT_OK
-    assert calls[0] == tart_macos.build_clone_argv(tart_macos.GOLDEN_DEFAULT, "gg-sbx-test")
+    assert calls[0] == tart_macos.build_clone_argv(tart_macos.GOLDEN_DEFAULT, "macos-sbx-test")
 
 
 def test_up_fails_when_ip_never_appears(monkeypatch):
@@ -538,7 +538,7 @@ def test_up_fails_when_ip_never_appears(monkeypatch):
     monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: MagicMock())
     monkeypatch.setattr(tart_macos, "BOOT_TIMEOUT_DEFAULT", 0)
 
-    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
+    args = tart_macos.parse_args(["up", "macos-sbx-test", "--no-repo"])
     rc = tart_macos.cmd_up(args)
     assert rc == tart_macos.EXIT_FAIL
 
@@ -559,7 +559,7 @@ def test_up_mounts_cwd_as_repo_by_default(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
     monkeypatch.chdir(tmp_path)
 
-    args = tart_macos.parse_args(["up", "gg-sbx-test"])
+    args = tart_macos.parse_args(["up", "macos-sbx-test"])
     rc = tart_macos.cmd_up(args)
 
     assert rc == tart_macos.EXIT_OK
@@ -581,7 +581,7 @@ def test_up_no_repo_flag_skips_mount(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
 
-    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
+    args = tart_macos.parse_args(["up", "macos-sbx-test", "--no-repo"])
     rc = tart_macos.cmd_up(args)
 
     assert rc == tart_macos.EXIT_OK
@@ -602,7 +602,7 @@ def test_up_repo_ro_flag(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
 
-    args = tart_macos.parse_args(["up", "gg-sbx-test", "--repo", str(tmp_path), "--repo-ro"])
+    args = tart_macos.parse_args(["up", "macos-sbx-test", "--repo", str(tmp_path), "--repo-ro"])
     rc = tart_macos.cmd_up(args)
 
     assert rc == tart_macos.EXIT_OK
@@ -625,7 +625,7 @@ def test_up_gui_flag_boots_with_a_display(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
 
-    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo", "--gui"])
+    args = tart_macos.parse_args(["up", "macos-sbx-test", "--no-repo", "--gui"])
     rc = tart_macos.cmd_up(args)
 
     assert rc == tart_macos.EXIT_OK
@@ -648,7 +648,7 @@ def test_up_headless_by_default(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
 
-    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
+    args = tart_macos.parse_args(["up", "macos-sbx-test", "--no-repo"])
     rc = tart_macos.cmd_up(args)
 
     assert rc == tart_macos.EXIT_OK
@@ -827,7 +827,7 @@ def test_cmd_mcp_requires_a_name():
 
 def test_cmd_mcp_prints_command(monkeypatch, capsys):
     monkeypatch.setattr(tart_macos, "get_ip", lambda name: "10.0.0.9")
-    args = tart_macos.parse_args(["mcp", "gg-sbx-test"])
+    args = tart_macos.parse_args(["mcp", "macos-sbx-test"])
     rc = tart_macos.cmd_mcp(args)
     assert rc == tart_macos.EXIT_OK
     out = capsys.readouterr().out
