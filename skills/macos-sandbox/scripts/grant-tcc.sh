@@ -1,6 +1,6 @@
 #!/bin/bash
-# Grant Accessibility / Screen Capture / Post Event / Apple Events permissions
-# to SSH-driven osascript, without disabling SIP.
+# Grant Screen Capture / Post Event / Apple Events permissions to SSH-driven
+# osascript, without disabling SIP.
 #
 # Trimmed from cirruslabs/macos-image-templates' scripts/update-tcc-database.sh
 # (https://github.com/cirruslabs/macos-image-templates, base.pkr.hcl provisioner,
@@ -14,6 +14,21 @@
 # to do script ...`, which upstream's own row set doesn't cover). Run this
 # INSIDE the guest as the admin user (tart_macos.py golden copies it over and
 # invokes it).
+#
+# Deliberately NOT granting kTCCServiceAccessibility here, confirmed live in
+# both directions: a pre-seeded row (auth_value=2) never actually works for
+# this category on this macOS build -- keystroke/AXRaise still fail with
+# -1719, no interactive dialog, tccd treats the client as already-decided.
+# Leaving it unseeded makes the client genuinely undetermined, and macOS DOES
+# then show a real "<client> would like to control this computer using
+# accessibility features" dialog with an "Open System Settings" button, on
+# the FIRST real access -- but only for the named-process AXRaise form (`tell
+# process "<name>" to perform action "AXRaise"`); a bare `keystroke` call to
+# System Events with no rows either never produced a dialog in testing. See
+# tart_macos.py's ACCESSIBILITY_TRIGGER_CMD, fired by `golden --grant` right
+# before leaving the VM running -- watch the window and click through when it
+# appears (it appears immediately, but hasn't been observed to auto-dismiss
+# quickly either; still, don't dawdle).
 set -euo pipefail
 
 resolve_user_tcc_database() {
@@ -80,14 +95,12 @@ update_tcc_database() {
 	  indirect_object_identifier
 	) VALUES
 	-- Indirect osascript invocation via SSH
-	('kTCCServiceAccessibility', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServiceScreenCapture', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServicePostEvent', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServiceAppleEvents', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, 0, 'com.apple.systemevents'),
 	('kTCCServiceAppleEvents', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, 0, 'com.apple.Safari'),
 	('kTCCServiceAppleEvents', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, 0, 'com.apple.Terminal'),
 	-- Direct osascript invocation
-	('kTCCServiceAccessibility', 1, '/usr/bin/osascript', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServiceScreenCapture', 1, '/usr/bin/osascript', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServicePostEvent', 1, '/usr/bin/osascript', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServiceAppleEvents', 1, '/usr/bin/osascript', 2, 0, 1, 0, 'com.apple.systemevents'),
@@ -100,7 +113,7 @@ main() {
   local database
   database="$(resolve_user_tcc_database)"
   update_tcc_database "$database"
-  echo "Granted Accessibility/ScreenCapture/PostEvent/AppleEvents (System Events/Safari/Terminal) to sshd-keygen-wrapper and osascript in: $database"
+  echo "Granted ScreenCapture/PostEvent/AppleEvents (System Events/Safari/Terminal) to sshd-keygen-wrapper and osascript in: $database (Accessibility deliberately left unset -- see header comment)"
 }
 
 main "$@"

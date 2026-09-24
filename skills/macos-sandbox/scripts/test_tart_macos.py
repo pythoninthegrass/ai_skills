@@ -681,6 +681,144 @@ def test_cmd_golden_grant_boots_with_display_and_leaves_it_running(monkeypatch, 
     assert "left running" in capsys.readouterr().err
 
 
+def test_check_accessibility_true(monkeypatch):
+    monkeypatch.setattr(tart_macos, "ssh_run", lambda *a, **k: fake_completed(returncode=0, stdout="true\n"))
+    assert tart_macos.check_accessibility("10.0.0.9", "admin", "admin") is True
+
+
+def test_check_accessibility_false(monkeypatch):
+    monkeypatch.setattr(tart_macos, "ssh_run", lambda *a, **k: fake_completed(returncode=0, stdout="false\n"))
+    assert tart_macos.check_accessibility("10.0.0.9", "admin", "admin") is False
+
+
+def test_check_accessibility_ssh_failure_is_false(monkeypatch):
+    monkeypatch.setattr(tart_macos, "ssh_run", lambda *a, **k: fake_completed(returncode=1, stderr="boom"))
+    assert tart_macos.check_accessibility("10.0.0.9", "admin", "admin") is False
+
+
+def test_trigger_accessibility_prompt_sends_the_axraise_trigger(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        tart_macos, "ssh_run", lambda ip, user, password, cmd, **k: calls.append(cmd) or fake_completed(returncode=0)
+    )
+    tart_macos.trigger_accessibility_prompt("10.0.0.9", "admin", "admin")
+    assert calls == [tart_macos.ACCESSIBILITY_TRIGGER_CMD]
+
+
+def test_cmd_golden_grant_fires_trigger_and_leaves_running_when_not_accessible(monkeypatch, capsys):
+    ssh_calls = []
+
+    def fake_ssh_run(ip, user, password, cmd, **k):
+        ssh_calls.append(cmd)
+        if cmd == tart_macos.ACCESSIBILITY_PROBE_CMD:
+            return fake_completed(returncode=0, stdout="false\n")
+        return fake_completed(returncode=0)
+
+    monkeypatch.setattr(tart_macos, "vm_exists", lambda name: False)
+    monkeypatch.setattr(tart_macos, "clone_vm", lambda src, dest: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "set_vm", lambda *a: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: MagicMock())
+    monkeypatch.setattr(tart_macos, "wait_for_ip", lambda name, timeout: "10.0.0.9")
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+    monkeypatch.setattr(tart_macos, "ssh_run", fake_ssh_run)
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0))
+    stop_calls = []
+    monkeypatch.setattr(tart_macos, "stop_vm", lambda name: stop_calls.append(name) or fake_completed(returncode=0))
+
+    args = tart_macos.parse_args(["golden", "--grant"])
+    rc = tart_macos.cmd_golden(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert tart_macos.ACCESSIBILITY_TRIGGER_CMD in ssh_calls
+    assert stop_calls == []  # left running, not stopped -- there's manual work left to do
+    assert "System Settings" in capsys.readouterr().err
+
+
+def test_cmd_golden_headless_does_not_fire_trigger_but_still_stops(monkeypatch, capsys):
+    ssh_calls = []
+
+    def fake_ssh_run(ip, user, password, cmd, **k):
+        ssh_calls.append(cmd)
+        if cmd == tart_macos.ACCESSIBILITY_PROBE_CMD:
+            return fake_completed(returncode=0, stdout="false\n")
+        return fake_completed(returncode=0)
+
+    monkeypatch.setattr(tart_macos, "vm_exists", lambda name: False)
+    monkeypatch.setattr(tart_macos, "clone_vm", lambda src, dest: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "set_vm", lambda *a: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: MagicMock())
+    monkeypatch.setattr(tart_macos, "wait_for_ip", lambda name, timeout: "10.0.0.9")
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+    monkeypatch.setattr(tart_macos, "ssh_run", fake_ssh_run)
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0))
+    stop_calls = []
+    monkeypatch.setattr(tart_macos, "stop_vm", lambda name: stop_calls.append(name) or fake_completed(returncode=0))
+
+    args = tart_macos.parse_args(["golden"])
+    rc = tart_macos.cmd_golden(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert tart_macos.ACCESSIBILITY_TRIGGER_CMD not in ssh_calls  # no display to show a dialog on
+    assert stop_calls == [tart_macos.GOLDEN_DEFAULT]  # still stopped, unlike --grant
+    assert "no display to grant it on" in capsys.readouterr().err
+
+
+def test_cmd_golden_grant_stops_and_confirms_when_accessibility_already_active(monkeypatch, capsys):
+    monkeypatch.setattr(tart_macos, "vm_exists", lambda name: False)
+    monkeypatch.setattr(tart_macos, "clone_vm", lambda src, dest: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "set_vm", lambda *a: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: MagicMock())
+    monkeypatch.setattr(tart_macos, "wait_for_ip", lambda name, timeout: "10.0.0.9")
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+    monkeypatch.setattr(tart_macos, "ssh_run", lambda *a, **k: fake_completed(returncode=0, stdout="true\n"))
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0))
+    stop_calls = []
+    monkeypatch.setattr(tart_macos, "stop_vm", lambda name: stop_calls.append(name) or fake_completed(returncode=0))
+
+    args = tart_macos.parse_args(["golden", "--grant"])
+    rc = tart_macos.cmd_golden(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert stop_calls == [tart_macos.GOLDEN_DEFAULT]
+    assert "Accessibility confirmed active" in capsys.readouterr().out
+
+
+def test_cmd_golden_grant_resumes_a_running_vm_instead_of_recloning(monkeypatch, capsys):
+    clone_calls = []
+    monkeypatch.setattr(tart_macos, "get_ip", lambda name: "10.0.0.9")
+    monkeypatch.setattr(tart_macos, "clone_vm", lambda src, dest: clone_calls.append(dest) or fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "ssh_run", lambda *a, **k: fake_completed(returncode=0, stdout="true\n"))
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0))
+    stop_calls = []
+    monkeypatch.setattr(tart_macos, "stop_vm", lambda name: stop_calls.append(name) or fake_completed(returncode=0))
+
+    args = tart_macos.parse_args(["golden", "--grant"])
+    rc = tart_macos.cmd_golden(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert clone_calls == []  # resumed the running VM, never re-cloned
+    assert stop_calls == [tart_macos.GOLDEN_DEFAULT]
+
+
+def test_cmd_golden_grant_force_bypasses_resume_even_if_running(monkeypatch):
+    clone_calls = []
+    monkeypatch.setattr(tart_macos, "get_ip", lambda name: "10.0.0.9")
+    monkeypatch.setattr(tart_macos, "vm_exists", lambda name: True)
+    monkeypatch.setattr(tart_macos, "stop_vm", lambda name: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "delete_vm", lambda name: fake_completed(returncode=0))
+    monkeypatch.setattr(
+        tart_macos,
+        "clone_vm",
+        lambda src, dest: clone_calls.append(dest) or fake_completed(returncode=1, stderr="stop-here"),
+    )
+
+    args = tart_macos.parse_args(["golden", "--grant", "--force"])
+    rc = tart_macos.cmd_golden(args)
+
+    assert rc == tart_macos.EXIT_FAIL  # clone deliberately fails; the point is that it was attempted at all
+    assert clone_calls == [tart_macos.GOLDEN_DEFAULT]
+
+
 def test_cmd_mcp_requires_a_name():
     args = tart_macos.parse_args(["mcp"])
     rc = tart_macos.cmd_mcp(args)

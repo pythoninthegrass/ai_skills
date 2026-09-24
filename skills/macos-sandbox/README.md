@@ -186,38 +186,42 @@ GB, if the host is on Tahoe+ and that image is configured instead).
 
 ## Permissions
 
-`golden` grants Accessibility, Screen Capture, Post Event, and Apple Events
-(System Events, Safari, and Terminal) to SSH-driven `osascript` via a direct
-TCC database write -- no SIP disable needed. Confirmed live: `tell
-application "Terminal" to do script "..."` works from a fresh, unpatched
-`up` clone, and so does `screencapture`.
+`golden` grants Screen Capture, Post Event, and Apple Events (System
+Events, Safari, and Terminal) to SSH-driven `osascript` via a direct TCC
+database write -- no SIP disable needed. Confirmed live: `tell application
+"Terminal" to do script "..."` works from a fresh, unpatched `up` clone,
+and so does `screencapture`.
 
-**Accessibility specifically doesn't reliably take effect from the database
-write alone, even though every other grant above does.** Confirmed live:
-`perform action "AXRaise"` and `keystroke` via `tell application "System
-Events"` failed with `-1719`/`1002` on a fresh clone, with
-`kTCCServiceAccessibility` rows already present and `auth_value=2` (allowed)
-for both `/usr/bin/osascript` and `/usr/libexec/sshd-keygen-wrapper` --
-`sshd-keygen-wrapper` is the actual client macOS attributes an SSH-invoked
-request to, not `osascript` itself. Manually toggling `sshd-keygen-wrapper`
-on in System Settings → Privacy & Security → Accessibility fixed both
-immediately, with **no observable change to the TCC.db row** (same
-`auth_value`, same `last_modified` timestamp before and after) -- so this
-is a real live/cached-trust gap in the database-seeding approach for this
-one TCC category specifically, not a wrong grant.
+**Accessibility is deliberately left unseeded** -- confirmed live in both
+directions: a pre-written `kTCCServiceAccessibility` row (`auth_value=2`,
+allowed) for `/usr/bin/osascript`/`/usr/libexec/sshd-keygen-wrapper`
+(`sshd-keygen-wrapper` is the actual client macOS attributes an
+SSH-invoked request to) never actually works -- `keystroke`/`AXRaise` still
+fail with `-1719`, no dialog, tccd treats the client as already-decided.
+Leaving the row unset instead keeps the client genuinely undetermined, and
+macOS **does** then show a real "`sshd-keygen-wrapper` would like to
+control this computer using accessibility features" dialog with an "Open
+System Settings" button -- but only from the named-process `AXRaise` form
+(`tell process "Terminal" to perform action "AXRaise"`); a bare `keystroke`
+call with no row either never produced one in testing.
 
-A PPPC configuration profile (`com.apple.TCC.configuration-profile-policy`)
-is the Apple-sanctioned way to pre-approve TCC grants programmatically, and
-was tried here: `profiles install -type configuration -path ...` on this
-macOS version refuses outright (`profiles tool no longer supports
-installs. Use System Settings Profiles to add configuration profiles.`) --
-Apple removed CLI profile installation; it now requires either genuine MDM
-enrollment (a real MDM server, out of scope for a standalone sandbox VM) or
-the same manual System Settings step. **If a task needs
-`keystroke`/`AXRaise`/other UI-scripting-via-System-Events calls (not just
-launching apps or `do script`), boot with `golden --grant` (or `up --gui`)
-once and manually enable Accessibility for `sshd-keygen-wrapper` in System
-Settings** -- the same VM/clone then works from SSH afterward. This
-doesn't block launching apps or driving them via `do script`/direct
-AppleEvents, which is this skill's core path and works from a completely
-unpatched boot.
+`golden --grant` fires this exact trigger and leaves the VM running with
+instructions -- watch the window, click "Open System Settings", and enable
+`sshd-keygen-wrapper` under Privacy & Security → Accessibility. Re-run
+`golden --grant` afterward: it resumes the running VM (doesn't re-clone),
+re-verifies via a side-effect-free probe (`UI elements enabled`), and only
+then stops it and reports `Accessibility confirmed active`. Verified
+end-to-end. A PPPC configuration profile
+(`com.apple.TCC.configuration-profile-policy`) is the Apple-sanctioned way
+to pre-approve TCC grants without any of this, and was tried first:
+`profiles install -type configuration -path ...` on this macOS version
+refuses outright (`profiles tool no longer supports installs. Use System
+Settings Profiles to add configuration profiles.`) -- Apple removed CLI
+profile installation; it now requires genuine MDM enrollment, out of scope
+for a standalone sandbox VM.
+
+None of this blocks launching apps or driving them via `do
+script`/direct AppleEvents, which is this skill's core path and works from
+a completely unpatched boot -- `golden --grant` is only needed for tasks
+that specifically need `keystroke`/`AXRaise`-style UI scripting via System
+Events.

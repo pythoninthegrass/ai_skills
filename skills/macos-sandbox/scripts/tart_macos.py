@@ -337,6 +337,53 @@ def build_github_keys_setup_cmd(github_user):
     )
 
 
+ACCESSIBILITY_PROBE_CMD = 'osascript -e \'tell application "System Events" to return (UI elements enabled)\''
+
+# Confirmed live: a bare `keystroke` to System Events with no TCC row never
+# produced a dialog, but this named-process AXRaise form does -- macOS shows
+# a real "<client> would like to control this computer using accessibility
+# features" dialog with an "Open System Settings" button, on the FIRST
+# access from a genuinely undetermined client (grant-tcc.sh deliberately
+# leaves Accessibility unset so this stays true). Requires Terminal to
+# actually be running, hence the `activate` first.
+ACCESSIBILITY_TRIGGER_CMD = (
+    'osascript -e \'tell application "Terminal" to activate\' '
+    '-e \'tell application "System Events" to tell process "Terminal" to perform action "AXRaise" of window 1\''
+)
+
+ACCESSIBILITY_NOT_ACTIVE_HEADLESS = (
+    "Accessibility isn't active for sshd-keygen-wrapper (needed for keystroke/AXRaise-style UI "
+    "scripting via System Events -- launching apps and `do script` already work without this, "
+    "confirmed live). This VM was booted headless, so there's no display to grant it on. "
+    "Re-run `golden --grant` (or --force --grant to rebuild) if a task needs this."
+)
+
+ACCESSIBILITY_GRANT_INSTRUCTIONS = (
+    "Accessibility isn't active for sshd-keygen-wrapper yet. A real permission dialog should now be "
+    "visible in the VM's window -- click 'Open System Settings', then enable sshd-keygen-wrapper under "
+    "Privacy & Security -> Accessibility. If no dialog appeared, it's likely already listed there "
+    "unchecked -- enable it directly, or add it via '+' -> /usr/libexec/sshd-keygen-wrapper if it isn't "
+    "listed. Either way, re-run `golden --grant` to verify and finish."
+)
+
+
+def check_accessibility(ip, user, password):
+    """UI elements enabled is a read-only query -- it reports Accessibility's
+    real state without needing Accessibility itself to ask, so it's safe to
+    poll without side effects."""
+    result = ssh_run(ip, user, password, ACCESSIBILITY_PROBE_CMD)
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def trigger_accessibility_prompt(ip, user, password):
+    """Fires the confirmed-working Accessibility-gated action so macOS shows
+    its native consent dialog on the VM's display -- one click, instead of a
+    manual System Settings hunt. Only shows a dialog while the client is
+    genuinely undetermined (see grant-tcc.sh); once accepted or denied,
+    macOS won't show it again for that client/service pair."""
+    ssh_run(ip, user, password, ACCESSIBILITY_TRIGGER_CMD)
+
+
 def build_mcp_command(server_name, ip, user, password, osascript_mcp_ref):
     remote_cmd = f"~/.local/bin/uvx --from {osascript_mcp_ref} osascript-mcp"
     ssh_argv = build_ssh_argv(ip, user, password, remote_cmd, forward_agent=True)
@@ -490,6 +537,13 @@ def cmd_golden(args):
 
 
 def _do_golden(name, args):
+    if args.grant and not args.force:
+        existing_ip = get_ip(name)
+        if existing_ip is not None:
+            # Resuming a `--grant` session left running from a prior call --
+            # re-verify rather than re-clone/boot.
+            return _finish_golden(name, existing_ip, args)
+
     if vm_exists(name):
         if not args.force:
             print(f"OK: {name} already exists")
@@ -519,6 +573,16 @@ def _do_golden(name, args):
         print(f"FAIL: SSH to {name} ({ip}) never came up", file=sys.stderr)
         return EXIT_FAIL
 
+    return _finish_golden(name, ip, args)
+
+
+def _finish_golden(name, ip, args):
+    """Runs the scripted grants (idempotent -- safe to repeat on a resumed
+    `--grant` session), then probes Accessibility, which is the one grant
+    that doesn't reliably take effect from the database write alone. On
+    `--grant`, a failed probe leaves the VM running with instructions rather
+    than failing outright -- re-running `golden --grant` after the manual
+    toggle resumes here and re-verifies instead of re-cloning."""
     grant_script = SCRIPT_DIR / "grant-tcc.sh"
     if grant_script.exists():
         scp_result = run(build_scp_argv(grant_script, ip, SSH_USER_DEFAULT, SSH_PASSWORD_DEFAULT, "/tmp/grant-tcc.sh"))
@@ -546,13 +610,18 @@ def _do_golden(name, args):
             file=sys.stderr,
         )
 
-    if args.grant:
-        print(f"OK: {name} booted with a display ({ip}) -- left running for manual permission grants.", file=sys.stderr)
-        print(f"Grant what's needed, then `tart stop {name}` when done.", file=sys.stderr)
-        return EXIT_OK
+    accessible = check_accessibility(ip, SSH_USER_DEFAULT, SSH_PASSWORD_DEFAULT)
+    if not accessible:
+        if args.grant:
+            trigger_accessibility_prompt(ip, SSH_USER_DEFAULT, SSH_PASSWORD_DEFAULT)
+            print(f"{name} ({ip}) left running -- Accessibility not active yet.", file=sys.stderr)
+            print(ACCESSIBILITY_GRANT_INSTRUCTIONS, file=sys.stderr)
+            return EXIT_OK
+        print(f"WARN: {ACCESSIBILITY_NOT_ACTIVE_HEADLESS}", file=sys.stderr)
 
     stop_vm(name)
-    print(f"OK: {name} bootstrapped ({ip})")
+    suffix = "Accessibility confirmed active" if accessible else "Accessibility not active, see WARN above"
+    print(f"OK: {name} bootstrapped ({ip}) -- {suffix}")
     return EXIT_OK
 
 

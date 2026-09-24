@@ -140,11 +140,12 @@ to rebuild it). On first run it:
    everyday GUI automation on Apple silicon, using well under the memory
    ceiling.
 3. Boots it headless, waits for an IP and SSH.
-4. Runs `scripts/grant-tcc.sh` over SSH to grant Accessibility, Screen
-   Capture, Post Event, and Apple Events (System Events + Safari)
-   permissions to SSH-driven `osascript` -- **no SIP disable required**, the
-   vanilla image ships with SIP on and this only needs `sudo sqlite3`
-   access to the per-user TCC database.
+4. Runs `scripts/grant-tcc.sh` over SSH to grant Screen Capture, Post
+   Event, and Apple Events (System Events, Safari, Terminal) permissions
+   to SSH-driven `osascript` -- **no SIP disable required**, the vanilla
+   image ships with SIP on and this only needs `sudo sqlite3` access to
+   the per-user TCC database. Accessibility is deliberately left unseeded
+   here -- see below.
 5. Installs `uv` in the guest.
 6. Authorizes `TART_MACOS_GITHUB_KEYS_USER`'s (default `pythoninthegrass`)
    GitHub public keys for inbound SSH (`curl .../pythoninthegrass.keys >>
@@ -162,27 +163,40 @@ that was already taken.
 
 **If step 4 is refused** (a locked-down TCC database, or a macOS point
 release that moved something): re-run with `--grant`, which boots the VM
-with a display (fixed -- an earlier version of `--grant` printed this
-suggestion but never actually booted non-headless) so the permissions can
-be granted once by hand in System Settings → Privacy & Security. They
-persist in `gg-golden`, so every clone inherits them -- this is a one-time
-fallback, not a per-session step.
+with a display so the permissions can be granted once by hand in System
+Settings → Privacy & Security. They persist in `gg-golden`, so every clone
+inherits them -- this is a one-time fallback, not a per-session step.
 
-**Accessibility specifically needs this fallback even when step 4
-succeeds.** Confirmed live: `kTCCServiceAccessibility` rows land in the
-database with `auth_value=2` (allowed) for both `/usr/bin/osascript` and
-`/usr/libexec/sshd-keygen-wrapper` (the actual client macOS attributes an
-SSH-invoked request to), and AppleEvents/ScreenCapture/PostEvent all
-genuinely work from that write alone -- but `keystroke`/`perform action
-"AXRaise"`/other UI-scripting-via-System-Events calls still fail
-(`-1719`/`1002`) until `sshd-keygen-wrapper` is toggled on by hand in
-System Settings → Privacy & Security → Accessibility, with **no observable
-change to the TCC.db row** when that toggle is flipped (same `auth_value`,
-same `last_modified`). This is a real live-trust gap in database-seeding
-for this one category, not a wrong grant -- run `golden --grant` (or `up
---gui` on a specific clone) once and enable it by hand if a task needs
-`keystroke`/`AXRaise`, not just launching apps or driving them via `do
-script`.
+**Accessibility needs this `--grant` path -- there's a real, working happy
+path for it, not just a manual fallback.** Confirmed live: a pre-seeded
+`kTCCServiceAccessibility` row (`auth_value=2`, allowed) never actually
+works for `/usr/bin/osascript`/`/usr/libexec/sshd-keygen-wrapper`
+(`sshd-keygen-wrapper` is the actual client macOS attributes an
+SSH-invoked request to) -- `keystroke`/`AXRaise` still fail with `-1719`,
+silently, no dialog, tccd treats the client as already-decided. So
+`grant-tcc.sh` leaves it unseeded on purpose: a genuinely undetermined
+client, hit with the right trigger (the named-process `AXRaise` form,
+`tell process "Terminal" to perform action "AXRaise"` -- a bare
+`keystroke` call did *not* produce a dialog in testing), makes macOS show
+a real "`sshd-keygen-wrapper` would like to control this computer..."
+dialog with an "Open System Settings" button. `golden --grant` fires this
+trigger automatically and leaves the VM running with instructions --
+watch the window, click through, then re-run `golden --grant`: it resumes
+the running VM (doesn't re-clone), re-verifies via a side-effect-free
+probe (`UI elements enabled`, which reports Accessibility's real state
+without needing the permission itself to ask), and only then stops the VM
+and reports `Accessibility confirmed active`. Verified end-to-end. This
+whole dance is only needed for `keystroke`/`AXRaise`-style UI scripting
+via System Events -- launching apps and driving them via `do script`
+already work from a completely unpatched boot.
+
+A PPPC configuration profile
+(`com.apple.TCC.configuration-profile-policy`) is the Apple-sanctioned way
+to pre-approve TCC grants without any manual step, and was tried first:
+`profiles install -type configuration -path ...` on this macOS version
+refuses outright (`profiles tool no longer supports installs`) -- Apple
+removed CLI profile installation; it now needs genuine MDM enrollment, out
+of scope for a standalone sandbox VM.
 
 Sending Apple Events to any app other than System Events or Safari still
 prompts once the first time it happens. If a task needs another app,
