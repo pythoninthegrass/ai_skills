@@ -519,13 +519,16 @@ def _do_golden(name, args):
         if scp_result.returncode == 0:
             ssh_run(ip, SSH_USER_DEFAULT, SSH_PASSWORD_DEFAULT, "chmod +x /tmp/grant-tcc.sh && /tmp/grant-tcc.sh")
 
-    ssh_run(
+    uv_install_result = ssh_run(
         ip,
         SSH_USER_DEFAULT,
         SSH_PASSWORD_DEFAULT,
         "curl -LsSf https://astral.sh/uv/install.sh | sh",
         timeout_s=120,
     )
+    if uv_install_result.returncode != 0:
+        print(f"FAIL: uv install failed in the guest: {uv_install_result.stderr.strip()}", file=sys.stderr)
+        return EXIT_FAIL
 
     github_keys_result = ssh_run(
         ip, SSH_USER_DEFAULT, SSH_PASSWORD_DEFAULT, build_github_keys_setup_cmd(GITHUB_KEYS_USER_DEFAULT)

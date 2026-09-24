@@ -336,6 +336,38 @@ def test_cmd_golden_force_removes_existing_before_recloning(monkeypatch):
     ]
 
 
+def test_cmd_golden_fails_when_uv_install_fails(monkeypatch, tmp_path):
+    """Regression: golden used to discard the uv-install step's result
+    entirely and report OK: bootstrapped even when it failed -- caught live
+    when a transient SSH hiccup during a real bootstrap left ~/.local/bin
+    empty on the guest, but `golden` had already reported success."""
+    monkeypatch.setattr(tart_macos, "vm_exists", lambda name: False)
+    monkeypatch.setattr(tart_macos, "clone_vm", lambda src, dest: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "set_vm", lambda *a: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: MagicMock())
+    monkeypatch.setattr(tart_macos, "wait_for_ip", lambda name, timeout: "10.0.0.9")
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+    monkeypatch.setattr(tart_macos, "stop_vm", lambda name: fake_completed(returncode=0))
+
+    ssh_calls = []
+
+    def fake_ssh_run(ip, user, password, remote_cmd, timeout_s=30):
+        ssh_calls.append(remote_cmd)
+        if "uv/install.sh" in remote_cmd:
+            return fake_completed(returncode=1, stderr="connection reset")
+        return fake_completed(returncode=0)
+
+    monkeypatch.setattr(tart_macos, "ssh_run", fake_ssh_run)
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+
+    args = tart_macos.parse_args(["golden"])
+    rc = tart_macos.cmd_golden(args)
+
+    assert rc == tart_macos.EXIT_FAIL
+    assert not any("github.com" in c for c in ssh_calls)  # never reached the next step
+
+
 def test_vm_lock_blocks_concurrent_exclusive(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
     with tart_macos.vm_lock("gg-golden"), pytest.raises(tart_macos.VMLocked), tart_macos.vm_lock("gg-golden"):
