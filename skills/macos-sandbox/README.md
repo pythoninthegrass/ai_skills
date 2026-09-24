@@ -189,8 +189,23 @@ GB, if the host is on Tahoe+ and that image is configured instead).
 `golden` grants Screen Capture, Post Event, and Apple Events (System
 Events, Safari, and Terminal) to SSH-driven `osascript` via a direct TCC
 database write -- no SIP disable needed. Confirmed live: `tell application
-"Terminal" to do script "..."` works from a fresh, unpatched `up` clone,
-and so does `screencapture`.
+"Terminal" to do script "..."` works from a fresh, unpatched `up` clone.
+
+**Screen Capture has the same seed-doesn't-take-effect gap as
+Accessibility below -- confirmed live, not yet fixed.** `screencapture`
+appears to work (exits 0, writes a file) but only ever captures the
+desktop wallpaper and menu bar, never real window content -- this is
+macOS's standard no-permission fallback, not a crash. Proof:
+`screencapture -l <windowid>` (capture one specific window, which has no
+degraded fallback) hard-fails with `could not create image from window`,
+on both a headless and a `--gui` boot, with `kTCCServiceScreenCapture`
+already showing `auth_value=2` (allowed) in the database for both
+`/usr/bin/osascript` and `/usr/libexec/sshd-keygen-wrapper`. **Don't trust
+a screenshot from this skill to show real app content yet** -- it will
+render only wallpaper + menu bar. The Accessibility fix below (leave the
+row unset, trigger a real dialog, click through once, bake it into golden)
+is the likely fix here too, for Screen Recording instead of Accessibility,
+but that hasn't been attempted yet.
 
 **Accessibility is deliberately left unseeded** -- confirmed live in both
 directions: a pre-written `kTCCServiceAccessibility` row (`auth_value=2`,

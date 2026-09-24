@@ -146,6 +146,20 @@ to rebuild it). On first run it:
    image ships with SIP on and this only needs `sudo sqlite3` access to
    the per-user TCC database. Accessibility is deliberately left unseeded
    here -- see below.
+
+   **Known gap, found live via a real e2e run (TASK-016 in
+   swords_of_glass, driving DOSBox-X): Screen Capture has the identical
+   seed-doesn't-take-effect problem as Accessibility, unfixed.**
+   `screencapture` exits 0 but only ever renders desktop wallpaper + menu
+   bar, never real window content -- macOS's standard silent fallback when
+   Screen Recording isn't actually granted. `screencapture -l <windowid>`
+   (no degraded fallback) confirms it: hard fails with `could not create
+   image from window`, on both headless and `--gui` boots, despite
+   `kTCCServiceScreenCapture` showing `auth_value=2` in the database.
+   **Don't trust a screenshot from this skill to show real app content
+   yet.** The Accessibility fix below is the likely template (leave the
+   row unset, find the trigger that produces a real Screen Recording
+   dialog, click through once into golden) but hasn't been attempted.
 5. Installs `uv` in the guest.
 6. Authorizes `TART_MACOS_GITHUB_KEYS_USER`'s (default `pythoninthegrass`)
    GitHub public keys for inbound SSH (`curl .../pythoninthegrass.keys >>
