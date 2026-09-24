@@ -1,13 +1,15 @@
 ---
 name: macos-sandbox
 description: >
-  Spin up the smallest usable macOS 27 (Golden Gate) VM with Tart, and wire
-  osascript-mcp's desktop automation (keyboard, windows, menus, screenshots,
-  Shortcuts) into it over SSH -- so automation runs in a sandboxed VM instead
-  of taking over the host desktop. Use when the user wants desktop
-  automation isolated from general computer use, asks to "sandbox
-  osascript", "spin up a macOS VM for automation", "run osascript-mcp in a
-  VM", or mentions Tart/tart-cli alongside desktop automation.
+  Spin up the smallest usable macOS VM with Tart (Sequoia by default, runs
+  on any Apple silicon host; Golden Gate/macOS 27 available for Tahoe+
+  hosts), and wire osascript-mcp's desktop automation (keyboard, windows,
+  menus, screenshots, Shortcuts) into it over SSH -- so automation runs in
+  a sandboxed VM instead of taking over the host desktop. Use when the user
+  wants desktop automation isolated from general computer use, asks to
+  "sandbox osascript", "spin up a macOS VM for automation", "run
+  osascript-mcp in a VM", or mentions Tart/tart-cli alongside desktop
+  automation.
 argument-hint: "[up|down|status|golden|doctor] [vm-name]"
 ---
 
@@ -31,13 +33,14 @@ remote/sandbox mode of its own. Running it directly on the host means every
 automated click, keystroke, or window move happens on Lance's real desktop,
 interrupting whatever else is going on there.
 
-This skill gives osascript-mcp a Mac of its own: a small macOS 27 ("Golden
-Gate") VM under Tart, reached over SSH. A second MCP server
-(`osascript-vm`, registered per session) proxies into the VM, so the host's
-own `osascript-mcp` registration is untouched and automation stays
-contained. Two servers, two Macs -- pick `osascript-vm` for anything
-disruptive (typing, clicking, screenshots of a full desktop), and the host
-one only when the task genuinely needs the real machine.
+This skill gives osascript-mcp a Mac of its own: a small macOS VM under
+Tart (Sequoia by default -- see "Host requirement" below for why), reached
+over SSH. A second MCP server (`osascript-vm`, registered per session)
+proxies into the VM, so the host's own `osascript-mcp` registration is
+untouched and automation stays contained. Two servers, two Macs -- pick
+`osascript-vm` for anything disruptive (typing, clicking, screenshots of a
+full desktop), and the host one only when the task genuinely needs the
+real machine.
 
 ## One-time setup: build the golden VM
 
@@ -54,33 +57,41 @@ you. It also warns (non-fatally) if the host's DHCP lease time isn't
 shortened yet -- see the tweak just below; the warning doesn't block
 `golden`/`up`.
 
-**Hard requirement, confirmed by real testing: the host itself must already
-be on macOS 26 (Tahoe) or later.** `ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0`'s
-disk uses Apple's ASIF format, which the tart maintainers confirm
+**Host requirement (default image): none beyond Apple silicon.** The
+default `TART_MACOS_IMAGE`, `ghcr.io/cirruslabs/macos-sequoia-vanilla`,
+predates cirruslabs' move to Apple's ASIF disk format, so it runs on any
+Apple-silicon host regardless of the host's own macOS version. This was
+picked over the smaller/newer `macos-golden-gate-vanilla:27.0` (macOS 27)
+specifically because of the requirement below, confirmed by real live
+testing, not just reading upstream docs.
+
+**If you opt into a newer guest image (e.g. `macos-golden-gate-vanilla`,
+macOS 27) via `TART_MACOS_IMAGE`: the host itself must already be on macOS
+26 (Tahoe) or later.** That image's disk uses Apple's ASIF format, which
+the tart maintainers confirm
 ([openai/tart#1096](https://github.com/openai/tart/issues/1096)) "is
 available only starting from macOS 26 (Tahoe). It's not available on macOS
 15 (Sequoia)." On an older host, `tart run` fails immediately with `Disk
-format 'asif' is not supported on this system` -- **this is unconditional
-and has no workaround via tart version, image size, or any flag in this
-skill.** `doctor` checks the host's own `sw_vers` and fails fast with this
-exact diagnosis rather than letting `golden`/`up` hang for
-`TART_MACOS_BOOT_TIMEOUT` waiting for an IP that will never arrive (a
-freshly-cloned VM that fails this way never actually starts, so there's no
-error to catch downstream -- just a VM stuck `stopped`). If the host can't
-be upgraded, this skill's guest image choice needs to change to a
-non-ASIF, older-OS image -- out of scope for what's documented here today.
+format 'asif' is not supported on this system` -- **unconditional, no
+workaround via tart version or any flag.** `doctor` recognizes
+`golden-gate` by name in `TART_MACOS_IMAGE` and checks the host's own
+`sw_vers` before letting `golden`/`up` hang for `TART_MACOS_BOOT_TIMEOUT`
+waiting for an IP that will never arrive (a VM that fails this way never
+actually starts, so there's no error to catch downstream -- just a VM stuck
+`stopped`). It correctly stays silent for the default Sequoia image even on
+an old host, since that image doesn't need this at all.
 
-**Known break: `openai/tools/tart` 2.35.0+ doesn't run on macOS Sequoia (or
-older) at all, regardless of the ASIF issue above.** That formula version
-and later are built against the macOS 26/Xcode 27 Swift toolchain and crash
-on launch with a `dyld: libswiftCompatibilitySpan.dylib` error on anything
-pre-Tahoe ([openai/tart#1302](https://github.com/openai/tart/issues/1302),
-open, fix unmerged as of writing). `doctor` runs `tart --version` and
-reports this exact error by name rather than a generic "not found". Fix by
-installing 2.34.0 directly (Homebrew now requires formulae live in a tap,
-so pointing `brew install` at a loose `.rb` file won't work) -- **necessary
-for `tart` itself to run on Sequoia, but not sufficient on its own: the
-ASIF requirement above still applies on top of this.**
+**Known break, independent of the above: `openai/tools/tart` 2.35.0+
+doesn't run on macOS Sequoia (or older) at all, regardless of which guest
+image is configured.** That formula version and later are built against
+the macOS 26/Xcode 27 Swift toolchain and crash on launch with a `dyld:
+libswiftCompatibilitySpan.dylib` error on anything pre-Tahoe
+([openai/tart#1302](https://github.com/openai/tart/issues/1302), open, fix
+unmerged as of writing). `doctor` runs `tart --version` and reports this
+exact error by name rather than a generic "not found". Fix by installing
+2.34.0 directly (Homebrew now requires formulae live in a tap, so pointing
+`brew install` at a loose `.rb` file won't work) -- this affects every host
+on Sequoia or older, no matter which `TART_MACOS_IMAGE` is configured.
 
 Extract to a permanent location outside any repo/scratch dir -- `$PWD`
 means a later cleanup pass on whatever directory you happened to run this
@@ -119,9 +130,11 @@ lease file may already be full of old 86,400s entries --
 Idempotent -- if `gg-golden` already exists this is a no-op (pass `--force`
 to rebuild it). On first run it:
 
-1. Clones `ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0` (the smallest
-   Golden Gate image, no brew/tooling baked in -- ~31 GB download, ~36 GB on
-   disk).
+1. Clones `ghcr.io/cirruslabs/macos-sequoia-vanilla:15.7.7` (vanilla, no
+   brew/tooling baked in -- ~24 GB download, ~50 GB on disk; runs on any
+   Apple-silicon host, see "Host requirement" above). Set `TART_MACOS_IMAGE`
+   to `ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0` for the newer,
+   smaller macOS 27 image instead, if the host is already on Tahoe+.
 2. Sizes it to 2 vCPU / 4096 MB / 1280x800 -- per the Eclectic Light
    testing this article was seeded from, that's comfortably enough for
    everyday GUI automation on Apple silicon, using well under the memory

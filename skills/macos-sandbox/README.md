@@ -1,25 +1,30 @@
 # macos-sandbox
 
-Spin up the smallest usable macOS 27 (Golden Gate) VM with
-[Tart](https://github.com/openai/tart), and wire
-[osascript-mcp](https://github.com/pythoninthegrass/osascript-mcp)'s
+Spin up the smallest usable macOS VM with
+[Tart](https://github.com/openai/tart) (Sequoia by default -- runs on any
+Apple-silicon host; Golden Gate/macOS 27 available for Tahoe+ hosts), and
+wire [osascript-mcp](https://github.com/pythoninthegrass/osascript-mcp)'s
 desktop automation into it over SSH -- so keyboard/mouse/screenshot
 automation runs sandboxed, not on the host desktop. See
 [SKILL.md](SKILL.md) for the full behavior.
 
-## Host requirement: macOS 26 (Tahoe) or later
+## Host requirement (only if you opt into a newer guest image)
 
-Confirmed by real testing, not just reading the docs: the default guest
-image's disk uses Apple's ASIF format, which Apple's Virtualization
-framework only supports on a Tahoe+ **host** (openai/tart maintainers,
-[#1096](https://github.com/openai/tart/issues/1096)) -- an older host's
-`tart run` fails immediately with `Disk format 'asif' is not supported on
-this system`, and `golden`/`up` would otherwise hang for
+The default `TART_MACOS_IMAGE`
+(`ghcr.io/cirruslabs/macos-sequoia-vanilla`) has no host requirement beyond
+Apple silicon. If you set `TART_MACOS_IMAGE` to a newer guest image such as
+`macos-golden-gate-vanilla:27.0` (macOS 27), the host itself must already
+be on macOS 26 (Tahoe) or later -- confirmed by real testing, not just
+reading the docs: that image's disk uses Apple's ASIF format, which Apple's
+Virtualization framework only supports on a Tahoe+ **host** (openai/tart
+maintainers, [#1096](https://github.com/openai/tart/issues/1096)) -- an
+older host's `tart run` fails immediately with `Disk format 'asif' is not
+supported on this system`, and `golden`/`up` would otherwise hang for
 `TART_MACOS_BOOT_TIMEOUT` waiting for an IP a VM that never started can
-never report. `doctor` checks this and fails fast. There is no workaround
-via tart version or any flag here -- see "Known break" below for a
-*separate*, necessary-but-not-sufficient tart-version issue on the same
-older hosts.
+never report. `doctor` recognizes `golden-gate` in `TART_MACOS_IMAGE` and
+checks this before it bites; it stays silent for the default Sequoia image
+even on an old host. See "Known break" below for a *separate*,
+image-independent tart-version issue on the same older hosts.
 
 ## Quickstart
 
@@ -48,8 +53,9 @@ older hosts.
 - **`golden`** -- one-time bootstrap; idempotent. `--force` rebuilds it,
   `--grant` boots with a display for a manual TCC-permission fallback.
 - **`status`** -- lists `gg-*` VMs and their state.
-- **`doctor`** -- checks `tart`, `sshpass`, Apple silicon, the host's own
-  macOS version (Tahoe+ required, see above), and free disk.
+- **`doctor`** -- checks `tart`, `sshpass`, Apple silicon, free disk, and
+  (only if `TART_MACOS_IMAGE` names a Tahoe+-only image) the host's own
+  macOS version, see above.
 
 ## Configuration
 
@@ -61,7 +67,7 @@ gitignored). A CLI flag always wins over either.
 
 | Env var | Default |
 | --- | --- |
-| `TART_MACOS_IMAGE` | `ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0` |
+| `TART_MACOS_IMAGE` | `ghcr.io/cirruslabs/macos-sequoia-vanilla:15.7.7` |
 | `TART_MACOS_CPU` | `2` |
 | `TART_MACOS_MEMORY_MB` | `4096` |
 | `TART_MACOS_DISPLAY` | `1280x800` |
@@ -86,14 +92,15 @@ The agent runs `doctor` → `golden` (skipped if already built) → `up` →
 
 ## Known break: tart 2.35.0+ on pre-Tahoe hosts
 
-Separate from the ASIF host requirement above, and necessary but **not**
-sufficient by itself: `brew install openai/tools/tart` currently installs
-2.37.0, which crashes on launch (`dyld: ... libswiftCompatibilitySpan.dylib`)
-on macOS Sequoia and older -- it's built against the macOS 26/Xcode 27 Swift
-toolchain ([openai/tart#1302](https://github.com/openai/tart/issues/1302),
-open). `doctor` detects this by name and points here. Pin 2.34.0 instead,
-since Homebrew now requires formulae to live in a tap (a loose `.rb` file
-won't install):
+Separate from the ASIF image-specific requirement above and independent of
+which `TART_MACOS_IMAGE` is configured: `brew install openai/tools/tart`
+currently installs 2.37.0, which crashes on launch (`dyld: ...
+libswiftCompatibilitySpan.dylib`) on macOS Sequoia and older -- it's built
+against the macOS 26/Xcode 27 Swift toolchain
+([openai/tart#1302](https://github.com/openai/tart/issues/1302), open).
+`doctor` detects this by name and points here. Pin 2.34.0 instead, since
+Homebrew now requires formulae to live in a tap (a loose `.rb` file won't
+install):
 
 Extract to a permanent location, not `$PWD` -- a repo/scratch dir can get
 cleaned up later and take `tart.app` with it, leaving the symlink dangling:
@@ -173,8 +180,9 @@ be?"](https://eclecticlight.co/2026/05/02/how-fast-is-a-macos-vm-and-how-small-c
 which found 2 vCPU / 4 GB comfortably usable for everyday GUI tasks on
 Apple silicon, using well under the memory ceiling. Disk can't shrink below
 the base image's size, but APFS clones are sparse and copy-on-write, so
-`up`'s per-session clone is fast and cheap regardless of the golden image's
-~36 GB footprint.
+`up`'s per-session clone is fast and cheap regardless of the golden VM's
+~50 GB footprint (the default Sequoia image; Golden Gate is smaller, ~36
+GB, if the host is on Tahoe+ and that image is configured instead).
 
 ## Permissions
 

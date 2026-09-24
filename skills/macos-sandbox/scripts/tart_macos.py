@@ -118,7 +118,7 @@ def load_config(env_file):
 
 config = load_config(ENV_FILE)
 
-IMAGE_DEFAULT = config("TART_MACOS_IMAGE", default="ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0")
+IMAGE_DEFAULT = config("TART_MACOS_IMAGE", default="ghcr.io/cirruslabs/macos-sequoia-vanilla:15.7.7")
 CPU_DEFAULT = config("TART_MACOS_CPU", default=2, cast=int)
 MEMORY_MB_DEFAULT = config("TART_MACOS_MEMORY_MB", default=4096, cast=int)
 DISPLAY_DEFAULT = config("TART_MACOS_DISPLAY", default="1280x800")
@@ -171,24 +171,38 @@ def check_tart_runs():
 
 ASIF_MIN_HOST_MACOS_MAJOR = 26  # Tahoe
 
+# Guest images published in Apple's ASIF disk format -- confirmed live (not
+# just by reading upstream docs) that golden-gate-vanilla:27.0 is one of
+# these: `tart run` on a freshly-cloned copy failed immediately with
+# "Disk format 'asif' is not supported on this system" on a Sequoia host,
+# and since the VM never actually started, golden/up would otherwise just
+# hang for the full BOOT_TIMEOUT waiting for an IP that could never arrive.
+# macos-sequoia-vanilla (the default below) is NOT in this set -- its guest
+# OS predates cirruslabs' move to ASIF, so it runs on pre-Tahoe hosts fine.
+ASIF_IMAGE_HINTS = ("golden-gate",)
+
 ASIF_HOST_TOO_OLD_HINT = (
     "host is on macOS {version}, but {image}'s disk uses the ASIF format, which Apple's "
     "Virtualization framework only supports starting macOS 26 (Tahoe) -- confirmed by the tart "
     "maintainers (https://github.com/openai/tart/issues/1096): 'ASIF is available only starting "
     "from macOS 26 (Tahoe). It's not available on macOS 15 (Sequoia).' `tart run` fails immediately "
     "with \"Disk format 'asif' is not supported on this system\" -- this is a hard host requirement, "
-    "not something a tart version pin can work around. Upgrade the host to macOS 26+, or point "
-    "TART_MACOS_IMAGE at an older, non-ASIF guest image if this host can't be upgraded."
+    "not something a tart version pin can work around. Upgrade the host to macOS 26+, or set "
+    "TART_MACOS_IMAGE to a non-ASIF guest image (e.g. the default macos-sequoia-vanilla) instead."
 )
 
 
+def image_requires_asif_host(image):
+    return any(hint in image for hint in ASIF_IMAGE_HINTS)
+
+
 def check_host_macos_version():
-    """Not every macOS guest image can run on every macOS host -- ASIF (the
-    disk format cirruslabs' newer image publishes are stored in) requires
-    the HOST to already be on Tahoe+, independent of which tart version is
-    installed. Discovered the hard way: `tart run` on a freshly-cloned
-    golden-gate-vanilla:27.0 silently hung waiting for an IP that could
-    never arrive, because the VM never actually started."""
+    """Only the ASIF-published images (see ASIF_IMAGE_HINTS) need this check
+    -- the configured image, not just the host version, decides whether an
+    old host is actually a problem."""
+    if not image_requires_asif_host(IMAGE_DEFAULT):
+        return None
+
     import platform
 
     version = platform.mac_ver()[0]

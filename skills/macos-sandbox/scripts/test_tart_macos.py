@@ -238,9 +238,18 @@ def test_doctor_ok_when_everything_present(monkeypatch, tmp_path):
     assert problems == []
 
 
-def test_check_host_macos_version_rejects_pre_tahoe(monkeypatch):
+def test_image_requires_asif_host_true_for_golden_gate():
+    assert tart_macos.image_requires_asif_host("ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0") is True
+
+
+def test_image_requires_asif_host_false_for_sequoia():
+    assert tart_macos.image_requires_asif_host("ghcr.io/cirruslabs/macos-sequoia-vanilla:15.7.7") is False
+
+
+def test_check_host_macos_version_rejects_pre_tahoe_for_an_asif_image(monkeypatch):
     import platform
 
+    monkeypatch.setattr(tart_macos, "IMAGE_DEFAULT", "ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0")
     monkeypatch.setattr(platform, "mac_ver", lambda: ("15.7.7", ("", "", ""), ""))
     problem = tart_macos.check_host_macos_version()
     assert problem is not None
@@ -248,9 +257,10 @@ def test_check_host_macos_version_rejects_pre_tahoe(monkeypatch):
     assert "asif" in problem.lower()
 
 
-def test_check_host_macos_version_accepts_tahoe_and_later(monkeypatch):
+def test_check_host_macos_version_accepts_tahoe_and_later_for_an_asif_image(monkeypatch):
     import platform
 
+    monkeypatch.setattr(tart_macos, "IMAGE_DEFAULT", "ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0")
     monkeypatch.setattr(platform, "mac_ver", lambda: ("26.1", ("", "", ""), ""))
     assert tart_macos.check_host_macos_version() is None
 
@@ -258,7 +268,19 @@ def test_check_host_macos_version_accepts_tahoe_and_later(monkeypatch):
 def test_check_host_macos_version_unparseable_is_not_a_problem(monkeypatch):
     import platform
 
+    monkeypatch.setattr(tart_macos, "IMAGE_DEFAULT", "ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0")
     monkeypatch.setattr(platform, "mac_ver", lambda: ("", ("", "", ""), ""))
+    assert tart_macos.check_host_macos_version() is None
+
+
+def test_check_host_macos_version_skips_non_asif_image_even_on_old_host(monkeypatch):
+    """The shipped default (macos-sequoia-vanilla) predates cirruslabs' move
+    to ASIF, so an old host is a non-issue for it -- this is the exact case
+    that would have false-failed if the check weren't image-aware."""
+    import platform
+
+    monkeypatch.setattr(tart_macos, "IMAGE_DEFAULT", "ghcr.io/cirruslabs/macos-sequoia-vanilla:15.7.7")
+    monkeypatch.setattr(platform, "mac_ver", lambda: ("15.7.7", ("", "", ""), ""))
     assert tart_macos.check_host_macos_version() is None
 
 
