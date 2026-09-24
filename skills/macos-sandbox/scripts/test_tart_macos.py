@@ -233,8 +233,33 @@ def test_doctor_ok_when_everything_present(monkeypatch, tmp_path):
     import platform
 
     monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(platform, "mac_ver", lambda: ("26.0", ("", "", ""), ""))
     problems = tart_macos.doctor()
     assert problems == []
+
+
+def test_check_host_macos_version_rejects_pre_tahoe(monkeypatch):
+    import platform
+
+    monkeypatch.setattr(platform, "mac_ver", lambda: ("15.7.7", ("", "", ""), ""))
+    problem = tart_macos.check_host_macos_version()
+    assert problem is not None
+    assert "26" in problem
+    assert "asif" in problem.lower()
+
+
+def test_check_host_macos_version_accepts_tahoe_and_later(monkeypatch):
+    import platform
+
+    monkeypatch.setattr(platform, "mac_ver", lambda: ("26.1", ("", "", ""), ""))
+    assert tart_macos.check_host_macos_version() is None
+
+
+def test_check_host_macos_version_unparseable_is_not_a_problem(monkeypatch):
+    import platform
+
+    monkeypatch.setattr(platform, "mac_ver", lambda: ("", ("", "", ""), ""))
+    assert tart_macos.check_host_macos_version() is None
 
 
 def test_vm_exists_true_when_name_is_a_field_in_list_output(monkeypatch):
@@ -287,6 +312,62 @@ def test_cmd_golden_force_removes_existing_before_recloning(monkeypatch):
         ("delete", tart_macos.GOLDEN_DEFAULT),
         ("clone", tart_macos.GOLDEN_DEFAULT),
     ]
+
+
+def test_vm_lock_blocks_concurrent_exclusive(monkeypatch, tmp_path):
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+    with tart_macos.vm_lock("gg-golden"), pytest.raises(tart_macos.VMLocked), tart_macos.vm_lock("gg-golden"):
+        pass
+
+
+def test_vm_lock_released_on_exit(monkeypatch, tmp_path):
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+    with tart_macos.vm_lock("gg-golden"):
+        pass
+    with tart_macos.vm_lock("gg-golden"):  # would raise if the first lock leaked
+        pass
+
+
+def test_vm_lock_different_names_dont_conflict(monkeypatch, tmp_path):
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+    with tart_macos.vm_lock("gg-golden"), tart_macos.vm_lock("gg-sbx-1"):
+        pass
+
+
+def test_vm_lock_shared_readers_dont_conflict(monkeypatch, tmp_path):
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+    with tart_macos.vm_lock("gg-golden", shared=True), tart_macos.vm_lock("gg-golden", shared=True):
+        pass
+
+
+def test_vm_lock_shared_blocked_by_exclusive(monkeypatch, tmp_path):
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+    with tart_macos.vm_lock("gg-golden"), pytest.raises(tart_macos.VMLocked), tart_macos.vm_lock("gg-golden", shared=True):
+        pass
+
+
+def test_cmd_golden_fails_fast_when_locked(monkeypatch, tmp_path):
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+    args = tart_macos.parse_args(["golden"])
+    with tart_macos.vm_lock(tart_macos.GOLDEN_DEFAULT):
+        rc = tart_macos.cmd_golden(args)
+    assert rc == tart_macos.EXIT_FAIL
+
+
+def test_cmd_up_fails_fast_when_golden_exclusively_locked(monkeypatch, tmp_path):
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
+    with tart_macos.vm_lock(tart_macos.GOLDEN_DEFAULT):
+        rc = tart_macos.cmd_up(args)
+    assert rc == tart_macos.EXIT_FAIL
+
+
+def test_cmd_down_fails_fast_when_locked(monkeypatch, tmp_path):
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+    args = tart_macos.parse_args(["down", "gg-sbx-test"])
+    with tart_macos.vm_lock("gg-sbx-test"):
+        rc = tart_macos.cmd_down(args)
+    assert rc == tart_macos.EXIT_FAIL
 
 
 def test_down_refuses_golden_without_flag():

@@ -47,21 +47,40 @@ one only when the task genuinely needs the real machine.
 
 Checks for `tart` (`brew install openai/tools/tart`), that `tart` actually
 runs (not just that it's on PATH -- see the pinned-version note below),
-`sshpass` (`brew install cirruslabs/cli/sshpass`), Apple silicon, and free
+`sshpass` (`brew install cirruslabs/cli/sshpass`), Apple silicon, **the
+host's own macOS version** (see the ASIF requirement just below), and free
 disk. Fix anything it flags before continuing -- it doesn't install for
 you. It also warns (non-fatally) if the host's DHCP lease time isn't
 shortened yet -- see the tweak just below; the warning doesn't block
 `golden`/`up`.
 
+**Hard requirement, confirmed by real testing: the host itself must already
+be on macOS 26 (Tahoe) or later.** `ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0`'s
+disk uses Apple's ASIF format, which the tart maintainers confirm
+([openai/tart#1096](https://github.com/openai/tart/issues/1096)) "is
+available only starting from macOS 26 (Tahoe). It's not available on macOS
+15 (Sequoia)." On an older host, `tart run` fails immediately with `Disk
+format 'asif' is not supported on this system` -- **this is unconditional
+and has no workaround via tart version, image size, or any flag in this
+skill.** `doctor` checks the host's own `sw_vers` and fails fast with this
+exact diagnosis rather than letting `golden`/`up` hang for
+`TART_MACOS_BOOT_TIMEOUT` waiting for an IP that will never arrive (a
+freshly-cloned VM that fails this way never actually starts, so there's no
+error to catch downstream -- just a VM stuck `stopped`). If the host can't
+be upgraded, this skill's guest image choice needs to change to a
+non-ASIF, older-OS image -- out of scope for what's documented here today.
+
 **Known break: `openai/tools/tart` 2.35.0+ doesn't run on macOS Sequoia (or
-older).** That formula version and later are built against the macOS
-26/Xcode 27 Swift toolchain and crash on launch with a `dyld:
-libswiftCompatibilitySpan.dylib` error on anything pre-Tahoe
-([openai/tart#1302](https://github.com/openai/tart/issues/1302), open,
-fix unmerged as of writing). `doctor` runs `tart --version` and reports
-this exact error by name rather than a generic "not found". Fix by
+older) at all, regardless of the ASIF issue above.** That formula version
+and later are built against the macOS 26/Xcode 27 Swift toolchain and crash
+on launch with a `dyld: libswiftCompatibilitySpan.dylib` error on anything
+pre-Tahoe ([openai/tart#1302](https://github.com/openai/tart/issues/1302),
+open, fix unmerged as of writing). `doctor` runs `tart --version` and
+reports this exact error by name rather than a generic "not found". Fix by
 installing 2.34.0 directly (Homebrew now requires formulae live in a tap,
-so pointing `brew install` at a loose `.rb` file won't work):
+so pointing `brew install` at a loose `.rb` file won't work) -- **necessary
+for `tart` itself to run on Sequoia, but not sufficient on its own: the
+ASIF requirement above still applies on top of this.**
 
 Extract to a permanent location outside any repo/scratch dir -- `$PWD`
 means a later cleanup pass on whatever directory you happened to run this
@@ -234,6 +253,17 @@ has no `playbook.yml` -- it's an additive layer, not a requirement for
 Apple's license permits at most 2 concurrent macOS VMs per host. Check
 `status` before spinning up a second sandbox; don't fan out more than 2
 `up` calls without stopping one first.
+
+Separately, `golden`/`up`/`down` each take a per-VM-name lock file under
+`/tmp/tart-macos-sandbox-<name>.lock` (`flock`, non-blocking) before
+touching a VM -- `golden` takes it exclusive, `up` takes a shared lock on
+the golden name (so multiple `up`s can clone from it concurrently) plus an
+exclusive lock on its own new name. A second invocation racing the same
+name fails fast with `FAIL: '<name>' is locked...` instead of interleaving
+`tart clone`/`set`/`run`/`stop`/`delete` calls against the same VM --
+discovered for real when a disowned background `golden` outlived its
+wrapper and a second `golden` was launched before noticing, racing both
+against `gg-golden`.
 
 ## Bundled scripts
 

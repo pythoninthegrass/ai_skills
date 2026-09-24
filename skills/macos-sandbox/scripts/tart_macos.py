@@ -42,6 +42,8 @@ Note:
 """
 
 import argparse
+import contextlib
+import fcntl
 import json
 import os
 import shutil
@@ -59,6 +61,45 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ENV_FILE = SCRIPT_DIR.parent / ".env"  # skills/macos-sandbox/.env, not cwd-relative
 
 SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+
+LOCK_DIR = Path("/tmp")
+
+
+class VMLocked(Exception):
+    pass
+
+
+def lock_path(name):
+    return LOCK_DIR / f"tart-macos-sandbox-{name}.lock"
+
+
+@contextlib.contextmanager
+def vm_lock(name, shared=False):
+    """Non-blocking flock per VM name -- two concurrent invocations both
+    targeting the same name (two `golden` runs; a `golden --force` rebuild
+    racing an `up` clone) can otherwise interleave `tart clone`/`set`/`run`/
+    `stop`/`delete` calls against the same VM. Observed for real: a disowned
+    background `golden` outlived its wrapper and a second `golden` was
+    started before noticing, racing both against `gg-golden`.
+
+    `shared=True` (multiple concurrent `up`s cloning FROM golden) only
+    excludes a concurrent exclusive holder (`golden` itself) -- it doesn't
+    serialize `up` calls against each other, since they target different
+    destination names and don't conflict."""
+    path = lock_path(name)
+    fh = open(path, "w")
+    flags = (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB
+    try:
+        fcntl.flock(fh, flags)
+    except OSError:
+        fh.close()
+        raise VMLocked(f"'{name}' is locked by another tart_macos.py operation (lock file: {path})") from None
+    try:
+        yield
+    finally:
+        fcntl.flock(fh, fcntl.LOCK_UN)
+        fh.close()
+
 
 # macOS guests auto-mount every `--dir` share under this path, one subdirectory
 # per mount tag -- see https://github.com/openai/tart/blob/main/docs/quick-start.md
@@ -128,6 +169,38 @@ def check_tart_runs():
     return f"tart is on PATH but `tart --version` failed: {stderr.strip() or 'no output'}"
 
 
+ASIF_MIN_HOST_MACOS_MAJOR = 26  # Tahoe
+
+ASIF_HOST_TOO_OLD_HINT = (
+    "host is on macOS {version}, but {image}'s disk uses the ASIF format, which Apple's "
+    "Virtualization framework only supports starting macOS 26 (Tahoe) -- confirmed by the tart "
+    "maintainers (https://github.com/openai/tart/issues/1096): 'ASIF is available only starting "
+    "from macOS 26 (Tahoe). It's not available on macOS 15 (Sequoia).' `tart run` fails immediately "
+    "with \"Disk format 'asif' is not supported on this system\" -- this is a hard host requirement, "
+    "not something a tart version pin can work around. Upgrade the host to macOS 26+, or point "
+    "TART_MACOS_IMAGE at an older, non-ASIF guest image if this host can't be upgraded."
+)
+
+
+def check_host_macos_version():
+    """Not every macOS guest image can run on every macOS host -- ASIF (the
+    disk format cirruslabs' newer image publishes are stored in) requires
+    the HOST to already be on Tahoe+, independent of which tart version is
+    installed. Discovered the hard way: `tart run` on a freshly-cloned
+    golden-gate-vanilla:27.0 silently hung waiting for an IP that could
+    never arrive, because the VM never actually started."""
+    import platform
+
+    version = platform.mac_ver()[0]
+    try:
+        major = int(version.split(".")[0])
+    except (ValueError, IndexError):
+        return None
+    if major < ASIF_MIN_HOST_MACOS_MAJOR:
+        return ASIF_HOST_TOO_OLD_HINT.format(version=version, image=IMAGE_DEFAULT)
+    return None
+
+
 def doctor():
     problems = []
     tart_problem = check_tart_runs()
@@ -142,6 +215,10 @@ def doctor():
 
     if platform.machine() != "arm64":
         problems.append(f"host is {platform.machine()}, not arm64 -- tart requires Apple silicon")
+
+    host_version_problem = check_host_macos_version()
+    if host_version_problem:
+        problems.append(host_version_problem)
 
     try:
         free_gb = shutil.disk_usage(Path.home()).free / 1e9
@@ -384,6 +461,15 @@ def cmd_doctor():
 
 def cmd_golden(args):
     name = GOLDEN_DEFAULT
+    try:
+        with vm_lock(name):
+            return _do_golden(name, args)
+    except VMLocked as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return EXIT_FAIL
+
+
+def _do_golden(name, args):
     if vm_exists(name):
         if not args.force:
             print(f"OK: {name} already exists")
@@ -446,6 +532,16 @@ def cmd_golden(args):
 
 def cmd_up(args):
     name = args.name or f"gg-sbx-{int(time.time())}"
+    try:
+        with vm_lock(GOLDEN_DEFAULT, shared=True):  # exclude a concurrent golden rebuild, not other `up`s
+            with vm_lock(name):
+                return _do_up(name, args)
+    except VMLocked as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return EXIT_FAIL
+
+
+def _do_up(name, args):
     clone_result = clone_vm(GOLDEN_DEFAULT, name)
     if clone_result.returncode != 0:
         print(f"FAIL: tart clone failed: {clone_result.stderr.strip()}", file=sys.stderr)
@@ -494,7 +590,12 @@ def cmd_status():
 
 def cmd_down(args):
     name = args.name or GOLDEN_DEFAULT
-    rc, message = down(name, GOLDEN_DEFAULT, allow_golden=args.golden)
+    try:
+        with vm_lock(name):
+            rc, message = down(name, GOLDEN_DEFAULT, allow_golden=args.golden)
+    except VMLocked as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return EXIT_FAIL
     print(message, file=sys.stderr if rc != EXIT_OK else sys.stdout)
     return rc
 

@@ -7,6 +7,20 @@ desktop automation into it over SSH -- so keyboard/mouse/screenshot
 automation runs sandboxed, not on the host desktop. See
 [SKILL.md](SKILL.md) for the full behavior.
 
+## Host requirement: macOS 26 (Tahoe) or later
+
+Confirmed by real testing, not just reading the docs: the default guest
+image's disk uses Apple's ASIF format, which Apple's Virtualization
+framework only supports on a Tahoe+ **host** (openai/tart maintainers,
+[#1096](https://github.com/openai/tart/issues/1096)) -- an older host's
+`tart run` fails immediately with `Disk format 'asif' is not supported on
+this system`, and `golden`/`up` would otherwise hang for
+`TART_MACOS_BOOT_TIMEOUT` waiting for an IP a VM that never started can
+never report. `doctor` checks this and fails fast. There is no workaround
+via tart version or any flag here -- see "Known break" below for a
+*separate*, necessary-but-not-sufficient tart-version issue on the same
+older hosts.
+
 ## Quickstart
 
 ```bash
@@ -34,7 +48,8 @@ automation runs sandboxed, not on the host desktop. See
 - **`golden`** -- one-time bootstrap; idempotent. `--force` rebuilds it,
   `--grant` boots with a display for a manual TCC-permission fallback.
 - **`status`** -- lists `gg-*` VMs and their state.
-- **`doctor`** -- checks `tart`, `sshpass`, Apple silicon, and free disk.
+- **`doctor`** -- checks `tart`, `sshpass`, Apple silicon, the host's own
+  macOS version (Tahoe+ required, see above), and free disk.
 
 ## Configuration
 
@@ -71,13 +86,14 @@ The agent runs `doctor` → `golden` (skipped if already built) → `up` →
 
 ## Known break: tart 2.35.0+ on pre-Tahoe hosts
 
-`brew install openai/tools/tart` currently installs 2.37.0, which crashes
-on launch (`dyld: ... libswiftCompatibilitySpan.dylib`) on macOS Sequoia
-and older -- it's built against the macOS 26/Xcode 27 Swift toolchain
-([openai/tart#1302](https://github.com/openai/tart/issues/1302), open).
-`doctor` detects this by name and points here. Pin 2.34.0 instead, since
-Homebrew now requires formulae to live in a tap (a loose `.rb` file won't
-install):
+Separate from the ASIF host requirement above, and necessary but **not**
+sufficient by itself: `brew install openai/tools/tart` currently installs
+2.37.0, which crashes on launch (`dyld: ... libswiftCompatibilitySpan.dylib`)
+on macOS Sequoia and older -- it's built against the macOS 26/Xcode 27 Swift
+toolchain ([openai/tart#1302](https://github.com/openai/tart/issues/1302),
+open). `doctor` detects this by name and points here. Pin 2.34.0 instead,
+since Homebrew now requires formulae to live in a tap (a loose `.rb` file
+won't install):
 
 Extract to a permanent location, not `$PWD` -- a repo/scratch dir can get
 cleaned up later and take `tart.app` with it, leaving the symlink dangling:
@@ -139,6 +155,15 @@ skips provisioning (warns, doesn't fail) if the repo has no `playbook.yml`.
 A clone left running still counts against Apple's 2-concurrent-macOS-VM
 limit and holds disk. Always `down` a sandbox when the automation task is
 done; `status` shows anything left over from an interrupted session.
+
+## Concurrency safety
+
+`golden`/`up`/`down` each take a non-blocking per-VM-name `flock` under
+`/tmp/tart-macos-sandbox-<name>.lock` before touching a VM, and fail fast
+with `'<name>' is locked...` rather than interleaving `tart` calls against
+the same VM from two invocations. Discovered for real: a disowned
+background `golden` outlived its wrapper, and a second `golden` got started
+before that was noticed, racing both against `gg-golden`.
 
 ## Sizing note
 
