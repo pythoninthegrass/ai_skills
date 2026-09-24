@@ -284,8 +284,10 @@ def build_dir_spec(tag, host_path, ro=False):
     return spec
 
 
-def build_run_argv(name, softnet=False, dirs=None):
-    argv = ["tart", "run", name, "--no-graphics", "--no-audio", "--no-clipboard"]
+def build_run_argv(name, softnet=False, dirs=None, headless=True):
+    argv = ["tart", "run", name, "--no-audio", "--no-clipboard"]
+    if headless:
+        argv.append("--no-graphics")
     for spec in dirs or []:
         argv += ["--dir", spec]
     if softnet:
@@ -349,11 +351,14 @@ def set_vm(name, cpu, memory_mb, display):
     return run(build_set_argv(name, cpu, memory_mb, display))
 
 
-def run_vm(name, softnet=False, dirs=None):
-    """Boot NAME headless and detached -- returns immediately, the VM keeps
-    running as a background process outside this script's lifetime."""
+def run_vm(name, softnet=False, dirs=None, headless=True):
+    """Boot NAME detached -- returns immediately, the VM keeps running as a
+    background process outside this script's lifetime. headless=False opens
+    a normal GUI window (Tart's default; --no-graphics is what suppresses
+    it) -- used by `golden --grant` so a human can grant permissions by hand
+    when the scripted TCC write is refused."""
     return subprocess.Popen(
-        build_run_argv(name, softnet=softnet, dirs=dirs),
+        build_run_argv(name, softnet=softnet, dirs=dirs, headless=headless),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
@@ -444,6 +449,7 @@ def parse_args(argv):
     p_up.add_argument("--repo", default=None, help="host directory to mount at the guest's shared 'repo' folder (default: cwd)")
     p_up.add_argument("--no-repo", action="store_true", help="don't mount a repo directory")
     p_up.add_argument("--repo-ro", action="store_true", help="mount the repo read-only")
+    p_up.add_argument("--gui", action="store_true", help="boot with a normal display window instead of headless")
 
     p_mcp = sub.add_parser("mcp", help="print the claude mcp add command for a VM")
     p_mcp.add_argument("name", nargs="?", default=None)
@@ -504,7 +510,7 @@ def _do_golden(name, args):
         print(f"FAIL: tart set failed: {set_result.stderr.strip()}", file=sys.stderr)
         return EXIT_FAIL
 
-    proc = run_vm(name, softnet=False)
+    proc = run_vm(name, softnet=False, headless=not args.grant)
     ip = wait_for_ip(name, BOOT_TIMEOUT_DEFAULT)
     if ip is None:
         print(f"FAIL: {name} never got an IP within {BOOT_TIMEOUT_DEFAULT}s", file=sys.stderr)
@@ -540,10 +546,13 @@ def _do_golden(name, args):
             file=sys.stderr,
         )
 
+    if args.grant:
+        print(f"OK: {name} booted with a display ({ip}) -- left running for manual permission grants.", file=sys.stderr)
+        print(f"Grant what's needed, then `tart stop {name}` when done.", file=sys.stderr)
+        return EXIT_OK
+
     stop_vm(name)
     print(f"OK: {name} bootstrapped ({ip})")
-    if args.grant:
-        print(f"Re-run with --grant to boot {name} with a display and grant permissions by hand.", file=sys.stderr)
     return EXIT_OK
 
 
@@ -570,7 +579,7 @@ def _do_up(name, args):
         repo_path = str(Path(args.repo).expanduser().resolve()) if args.repo else os.getcwd()
         dirs.append(build_dir_spec("repo", repo_path, ro=args.repo_ro))
 
-    run_vm(name, softnet=args.softnet, dirs=dirs)
+    run_vm(name, softnet=args.softnet, dirs=dirs, headless=not args.gui)
     ip = wait_for_ip(name, BOOT_TIMEOUT_DEFAULT)
     if ip is None:
         print(f"FAIL: {name} never got an IP within {BOOT_TIMEOUT_DEFAULT}s", file=sys.stderr)

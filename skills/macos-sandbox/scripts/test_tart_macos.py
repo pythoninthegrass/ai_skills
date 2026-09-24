@@ -105,7 +105,12 @@ def test_build_set_argv():
 
 def test_build_run_argv_headless_by_default():
     argv = tart_macos.build_run_argv("vm")
-    assert argv == ["tart", "run", "vm", "--no-graphics", "--no-audio", "--no-clipboard"]
+    assert argv == ["tart", "run", "vm", "--no-audio", "--no-clipboard", "--no-graphics"]
+
+
+def test_build_run_argv_headless_false_opens_a_window():
+    argv = tart_macos.build_run_argv("vm", headless=False)
+    assert "--no-graphics" not in argv
 
 
 def test_build_run_argv_softnet():
@@ -165,9 +170,9 @@ def test_build_run_argv_with_dirs():
         "tart",
         "run",
         "vm",
-        "--no-graphics",
         "--no-audio",
         "--no-clipboard",
+        "--no-graphics",
         "--dir",
         "repo:/a",
         "--dir",
@@ -355,7 +360,7 @@ def test_cmd_golden_fails_when_uv_install_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(tart_macos, "vm_exists", lambda name: False)
     monkeypatch.setattr(tart_macos, "clone_vm", lambda src, dest: fake_completed(returncode=0))
     monkeypatch.setattr(tart_macos, "set_vm", lambda *a: fake_completed(returncode=0))
-    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: MagicMock())
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: MagicMock())
     monkeypatch.setattr(tart_macos, "wait_for_ip", lambda name, timeout: "10.0.0.9")
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
     monkeypatch.setattr(tart_macos, "stop_vm", lambda name: fake_completed(returncode=0))
@@ -513,7 +518,7 @@ def test_up_builds_clone_from_golden_and_waits_for_ip_and_ssh(monkeypatch):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: MagicMock())
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: MagicMock())
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
 
     args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
@@ -530,7 +535,7 @@ def test_up_fails_when_ip_never_appears(monkeypatch):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: MagicMock())
+    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: MagicMock())
     monkeypatch.setattr(tart_macos, "BOOT_TIMEOUT_DEFAULT", 0)
 
     args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
@@ -548,7 +553,9 @@ def test_up_mounts_cwd_as_repo_by_default(monkeypatch, tmp_path):
 
     dirs_seen = []
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: dirs_seen.append(dirs) or MagicMock())
+    monkeypatch.setattr(
+        tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: dirs_seen.append(dirs) or MagicMock()
+    )
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
     monkeypatch.chdir(tmp_path)
 
@@ -569,7 +576,9 @@ def test_up_no_repo_flag_skips_mount(monkeypatch, tmp_path):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: dirs_seen.append(dirs) or MagicMock())
+    monkeypatch.setattr(
+        tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: dirs_seen.append(dirs) or MagicMock()
+    )
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
 
     args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
@@ -588,7 +597,9 @@ def test_up_repo_ro_flag(monkeypatch, tmp_path):
         return fake_completed(returncode=0)
 
     monkeypatch.setattr(tart_macos, "run", fake_run)
-    monkeypatch.setattr(tart_macos, "run_vm", lambda name, softnet=False, dirs=None: dirs_seen.append(dirs) or MagicMock())
+    monkeypatch.setattr(
+        tart_macos, "run_vm", lambda name, softnet=False, dirs=None, headless=True: dirs_seen.append(dirs) or MagicMock()
+    )
     monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
 
     args = tart_macos.parse_args(["up", "gg-sbx-test", "--repo", str(tmp_path), "--repo-ro"])
@@ -596,6 +607,78 @@ def test_up_repo_ro_flag(monkeypatch, tmp_path):
 
     assert rc == tart_macos.EXIT_OK
     assert dirs_seen == [[f"repo:{tmp_path.resolve()}:ro"]]
+
+
+def test_up_gui_flag_boots_with_a_display(monkeypatch, tmp_path):
+    headless_seen = []
+
+    def fake_run(argv, **kwargs):
+        if argv[:2] == ["tart", "ip"]:
+            return fake_completed(returncode=0, stdout="10.0.0.9\n")
+        return fake_completed(returncode=0)
+
+    monkeypatch.setattr(tart_macos, "run", fake_run)
+    monkeypatch.setattr(
+        tart_macos,
+        "run_vm",
+        lambda name, softnet=False, dirs=None, headless=True: headless_seen.append(headless) or MagicMock(),
+    )
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+
+    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo", "--gui"])
+    rc = tart_macos.cmd_up(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert headless_seen == [False]
+
+
+def test_up_headless_by_default(monkeypatch, tmp_path):
+    headless_seen = []
+
+    def fake_run(argv, **kwargs):
+        if argv[:2] == ["tart", "ip"]:
+            return fake_completed(returncode=0, stdout="10.0.0.9\n")
+        return fake_completed(returncode=0)
+
+    monkeypatch.setattr(tart_macos, "run", fake_run)
+    monkeypatch.setattr(
+        tart_macos,
+        "run_vm",
+        lambda name, softnet=False, dirs=None, headless=True: headless_seen.append(headless) or MagicMock(),
+    )
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+
+    args = tart_macos.parse_args(["up", "gg-sbx-test", "--no-repo"])
+    rc = tart_macos.cmd_up(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert headless_seen == [True]
+
+
+def test_cmd_golden_grant_boots_with_display_and_leaves_it_running(monkeypatch, capsys):
+    headless_seen = []
+    monkeypatch.setattr(tart_macos, "vm_exists", lambda name: False)
+    monkeypatch.setattr(tart_macos, "clone_vm", lambda src, dest: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "set_vm", lambda *a: fake_completed(returncode=0))
+    monkeypatch.setattr(
+        tart_macos,
+        "run_vm",
+        lambda name, softnet=False, dirs=None, headless=True: headless_seen.append(headless) or MagicMock(),
+    )
+    monkeypatch.setattr(tart_macos, "wait_for_ip", lambda name, timeout: "10.0.0.9")
+    monkeypatch.setattr(tart_macos, "wait_for_ssh", lambda *a, **k: True)
+    monkeypatch.setattr(tart_macos, "ssh_run", lambda *a, **k: fake_completed(returncode=0))
+    monkeypatch.setattr(tart_macos, "run", lambda argv, **k: fake_completed(returncode=0))
+    stop_calls = []
+    monkeypatch.setattr(tart_macos, "stop_vm", lambda name: stop_calls.append(name) or fake_completed(returncode=0))
+
+    args = tart_macos.parse_args(["golden", "--grant"])
+    rc = tart_macos.cmd_golden(args)
+
+    assert rc == tart_macos.EXIT_OK
+    assert headless_seen == [False]
+    assert stop_calls == []  # left running so a human can grant permissions
+    assert "left running" in capsys.readouterr().err
 
 
 def test_cmd_mcp_requires_a_name():

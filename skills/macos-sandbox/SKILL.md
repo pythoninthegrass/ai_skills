@@ -162,9 +162,27 @@ that was already taken.
 
 **If step 4 is refused** (a locked-down TCC database, or a macOS point
 release that moved something): re-run with `--grant`, which boots the VM
-with a display so the permissions can be granted once by hand in System
-Settings → Privacy & Security. They persist in `gg-golden`, so every clone
-inherits them -- this is a one-time fallback, not a per-session step.
+with a display (fixed -- an earlier version of `--grant` printed this
+suggestion but never actually booted non-headless) so the permissions can
+be granted once by hand in System Settings → Privacy & Security. They
+persist in `gg-golden`, so every clone inherits them -- this is a one-time
+fallback, not a per-session step.
+
+**Accessibility specifically needs this fallback even when step 4
+succeeds.** Confirmed live: `kTCCServiceAccessibility` rows land in the
+database with `auth_value=2` (allowed) for both `/usr/bin/osascript` and
+`/usr/libexec/sshd-keygen-wrapper` (the actual client macOS attributes an
+SSH-invoked request to), and AppleEvents/ScreenCapture/PostEvent all
+genuinely work from that write alone -- but `keystroke`/`perform action
+"AXRaise"`/other UI-scripting-via-System-Events calls still fail
+(`-1719`/`1002`) until `sshd-keygen-wrapper` is toggled on by hand in
+System Settings → Privacy & Security → Accessibility, with **no observable
+change to the TCC.db row** when that toggle is flipped (same `auth_value`,
+same `last_modified`). This is a real live-trust gap in database-seeding
+for this one category, not a wrong grant -- run `golden --grant` (or `up
+--gui` on a specific clone) once and enable it by hand if a task needs
+`keystroke`/`AXRaise`, not just launching apps or driving them via `do
+script`.
 
 Sending Apple Events to any app other than System Events or Safari still
 prompts once the first time it happens. If a task needs another app,
