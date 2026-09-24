@@ -289,9 +289,15 @@ subcommands, described above. Every tunable resolves through
 review the script before first use.
 
 `scripts/grant-tcc.sh` -- trimmed from cirruslabs/macos-image-templates'
-`update-tcc-database.sh`, run inside the guest by `golden` to grant
-Accessibility/Screen Capture/Post Event/Apple Events to SSH-driven
-`osascript` without disabling SIP.
+`update-tcc-database.sh` (fetched verbatim from source -- an earlier version
+of this file was reconstructed from a doc summary instead and had
+`client`/`client_type` transposed in the `INSERT`'s column list, silently
+writing garbage rows that nothing caught until a live AppleEvent test
+actually exercised them), run inside the guest by `golden` to grant
+Accessibility/Screen Capture/Post Event/Apple Events (System Events, Safari,
+**and Terminal** -- added beyond upstream's own row set, since this is the
+exact app this skill's target use case drives) to SSH-driven `osascript`
+without disabling SIP.
 
 `scripts/test_tart_macos.py` -- the accompanying pytest suite, also a
 self-contained `uv run --script`. Run it directly

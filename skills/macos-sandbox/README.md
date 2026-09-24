@@ -187,8 +187,16 @@ GB, if the host is on Tahoe+ and that image is configured instead).
 ## Permissions
 
 `golden` grants Accessibility, Screen Capture, Post Event, and Apple Events
-(System Events + Safari) to SSH-driven `osascript` via a direct TCC
-database write -- no SIP disable needed. If that write is ever refused,
-`golden --grant` boots with a display so the same grants can be made once
-by hand; see [SKILL.md](SKILL.md) for the fallback and its Apple Events
-caveat.
+(System Events, Safari, and Terminal) to SSH-driven `osascript` via a direct
+TCC database write -- no SIP disable needed. Confirmed live: `tell
+application "Terminal" to do script "..."` works from a fresh, unpatched
+`up` clone. If that write is ever refused, `golden --grant` boots with a
+display so the same grants can be made once by hand; see
+[SKILL.md](SKILL.md) for the fallback and its Apple Events caveat.
+
+**Known gap:** `perform action "AXRaise"` via `tell application "System
+Events"` still fails with `-1719` even though Accessibility is correctly
+granted to `/usr/bin/osascript` in the database -- not yet root-caused. This
+only affects reliable window-raising before a keystroke burst on a
+multi-window setup; it doesn't block launching apps or driving them via
+`do script`/direct AppleEvents, which is this skill's core path.

@@ -40,6 +40,17 @@ def fake_completed(returncode=0, stdout="", stderr=""):
     return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
 
 
+@pytest.fixture(autouse=True)
+def isolated_lock_dir(monkeypatch, tmp_path):
+    """Every test gets its own lock directory -- vm_lock's default LOCK_DIR is
+    real /tmp, and any cmd_golden/cmd_up/cmd_down test that didn't override
+    this would otherwise race a real concurrent invocation on this machine
+    (caught live: a real `golden --force` running in the background made
+    several `up`-path tests fail because they contended for the same real
+    /tmp/tart-macos-sandbox-gg-golden.lock)."""
+    monkeypatch.setattr(tart_macos, "LOCK_DIR", tmp_path)
+
+
 def test_config_default_when_nothing_set(monkeypatch):
     monkeypatch.delenv("TART_MACOS_CPU", raising=False)
     config = tart_macos.load_config(None)

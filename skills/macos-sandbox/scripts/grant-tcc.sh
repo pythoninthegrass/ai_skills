@@ -3,10 +3,17 @@
 # to SSH-driven osascript, without disabling SIP.
 #
 # Trimmed from cirruslabs/macos-image-templates' scripts/update-tcc-database.sh
-# (https://github.com/cirruslabs/macos-image-templates, base.pkr.hcl provisioner),
-# keeping only the sshd-keygen-wrapper and osascript rows and dropping the
-# tart-guest-agent / python rows this skill doesn't need. Run this INSIDE the
-# guest as the admin user (tart_macos.py golden copies it over and invokes it).
+# (https://github.com/cirruslabs/macos-image-templates, base.pkr.hcl provisioner,
+# fetched verbatim -- an earlier version of this file was reconstructed from a
+# doc summary instead of the real source and had `client`/`client_type`
+# transposed in the column list, silently storing garbage until a live
+# AppleEvent test caught it), keeping only the sshd-keygen-wrapper and
+# osascript rows, dropping the tart-guest-agent/python rows this skill doesn't
+# need, and adding com.apple.Terminal to the indirect AppleEvents grants (this
+# project drives DOSBox-X and other GUI apps via `tell application "Terminal"
+# to do script ...`, which upstream's own row set doesn't cover). Run this
+# INSIDE the guest as the admin user (tart_macos.py golden copies it over and
+# invokes it).
 set -euo pipefail
 
 resolve_user_tcc_database() {
@@ -60,31 +67,32 @@ resolve_user_tcc_database() {
 }
 
 update_tcc_database() {
-  sudo sqlite3 "$1" <<-'EOF'
+  sudo sqlite3 "$1" <<-EOF
 	INSERT OR REPLACE
 	INTO access (
 	  service,
-	  client,
 	  client_type,
+	  client,
 	  auth_value,
 	  auth_reason,
 	  auth_version,
-	  indirect_object_identifier,
-	  flags
-	)
-	VALUES
+	  indirect_object_identifier_type,
+	  indirect_object_identifier
+	) VALUES
 	-- Indirect osascript invocation via SSH
 	('kTCCServiceAccessibility', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServiceScreenCapture', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServicePostEvent', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServiceAppleEvents', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, 0, 'com.apple.systemevents'),
 	('kTCCServiceAppleEvents', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, 0, 'com.apple.Safari'),
+	('kTCCServiceAppleEvents', 1, '/usr/libexec/sshd-keygen-wrapper', 2, 0, 1, 0, 'com.apple.Terminal'),
 	-- Direct osascript invocation
 	('kTCCServiceAccessibility', 1, '/usr/bin/osascript', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServiceScreenCapture', 1, '/usr/bin/osascript', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServicePostEvent', 1, '/usr/bin/osascript', 2, 0, 1, NULL, 'UNUSED'),
 	('kTCCServiceAppleEvents', 1, '/usr/bin/osascript', 2, 0, 1, 0, 'com.apple.systemevents'),
-	('kTCCServiceAppleEvents', 1, '/usr/bin/osascript', 2, 0, 1, 0, 'com.apple.Safari');
+	('kTCCServiceAppleEvents', 1, '/usr/bin/osascript', 2, 0, 1, 0, 'com.apple.Safari'),
+	('kTCCServiceAppleEvents', 1, '/usr/bin/osascript', 2, 0, 1, 0, 'com.apple.Terminal');
 	EOF
 }
 
@@ -92,7 +100,7 @@ main() {
   local database
   database="$(resolve_user_tcc_database)"
   update_tcc_database "$database"
-  echo "Granted Accessibility/ScreenCapture/PostEvent/AppleEvents to sshd-keygen-wrapper and osascript in: $database"
+  echo "Granted Accessibility/ScreenCapture/PostEvent/AppleEvents (System Events/Safari/Terminal) to sshd-keygen-wrapper and osascript in: $database"
 }
 
 main "$@"
