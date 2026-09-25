@@ -23,6 +23,7 @@ Note:
 
 import importlib.util
 import pytest
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -833,6 +834,24 @@ def test_cmd_mcp_prints_command(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "claude mcp add osascript-vm --" in out
     assert "10.0.0.9" in out
+
+
+def test_cmd_mcp_output_survives_eval_without_expanding_tilde_locally(monkeypatch, capsys):
+    """Regression test: the printed line is meant to be `eval`'d by the
+    caller's shell (per SKILL.md's documented usage). An unquoted `~` in the
+    remote_cmd token would get tilde-expanded against the LOCAL $HOME by that
+    eval, before ssh ever sees it -- silently pointing the registered MCP
+    server at the wrong (host, not guest) uvx path. Simulate the eval by
+    round-tripping the printed line through shlex.split, the same lexing a
+    POSIX shell applies, and confirm the remote_cmd argument still starts
+    with a literal, unexpanded `~`."""
+    monkeypatch.setattr(tart_macos, "get_ip", lambda name: "10.0.0.9")
+    args = tart_macos.parse_args(["mcp", "macos-sbx-test"])
+    tart_macos.cmd_mcp(args)
+    out = capsys.readouterr().out.strip()
+    argv = shlex.split(out)
+    remote_cmd = argv[-1]
+    assert remote_cmd.startswith("~/.local/bin/uvx")
 
 
 if __name__ == "__main__":

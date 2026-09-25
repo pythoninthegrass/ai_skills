@@ -46,6 +46,7 @@ import contextlib
 import fcntl
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -674,7 +675,12 @@ def cmd_mcp(args):
         print(f"FAIL: could not resolve an IP for {name} -- is it running?", file=sys.stderr)
         return EXIT_FAIL
     cmd = build_mcp_command(args.server_name, ip, SSH_USER_DEFAULT, SSH_PASSWORD_DEFAULT, OSASCRIPT_MCP_REF_DEFAULT)
-    print(" ".join(cmd))
+    # shlex.quote each arg (not plain " ".join) so `eval`-ing this line in the
+    # caller's shell re-parses it correctly -- in particular the remote_cmd's
+    # leading `~` must stay literal for ssh's remote shell to expand against
+    # the guest user's home, not get tilde-expanded against the *host's* home
+    # by the local shell doing the eval.
+    print(shlex.join(cmd))
     return EXIT_OK
 
 
