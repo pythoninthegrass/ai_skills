@@ -206,6 +206,10 @@ HARD RULES:
   an accepted outcome here, but claiming a run that didn't happen is not.
 - Match the surrounding code/prose style; comments explain WHAT or WHY,
   never "improved"/"fixed"/"new".
+- Never end a turn with narration alone. Print-mode CLIs (`pi -p`,
+  `opencode run`) read a final message with no tool call as the end of
+  the session and exit mid-task. End a turn only with a tool call, or
+  with the `MANUAL_RUN:` line once the STUCK/FINISH protocol has run.
 
 STUCK POLICY: if the same blocker persists across ~3 distinct fix attempts
 with no genuine progress, STOP. Write the blocker into the task's notes,
@@ -303,6 +307,14 @@ stretch with the identical error recurring, or the log showing an obvious
 loop. A run that's slow but making incremental progress (new draft
 attempts, changing error messages, partial test passes) is not thrashing —
 let it continue.
+
+A process that exits with no `MANUAL_RUN:` marker and no TTL kill is not
+an outcome — it is the CLI quitting mid-task, most often because its last
+turn was tool-less narration (see the HARD RULES bullet in the step-4
+skeleton). Check the session log's final turn, then resume the same
+session (`pi --session-id <id> -p "@resume.md"`) with a short prompt that
+restates the rules and where the run left off; relaunch through `-l` as
+usual rather than treating it as BAILED.
 
 Otherwise let it run until a `MANUAL_RUN: DONE —` / `MANUAL_RUN: BAILED —`
 marker appears, the process exits (including via `timeout` killing it at
