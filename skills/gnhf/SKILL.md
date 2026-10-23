@@ -113,17 +113,24 @@ another open-weight model, whatever) without ever asking it.
      referenced elsewhere may have been rotated out, which is itself a
      likely explanation for why step 2 failed.
 4. **Retry the smoke test** with whatever explicit provider/model step 3
-   turned up. Current Aperture model IDs: `qwen3.8-flash-next-iq4`,
-   `qwen3.5-9b`. The `:builder` suffix is retired — `qwen3.8-flash-next-iq4`
-   is a single routable model ID.
+   turned up. The expected default on both CLIs is `switchyard` +
+   `local/coding`, the Stage router that picks Tiel or Strata, reached
+   through Aperture at `http://ai/v1`. Strata is also routable directly as
+   `strata-flash-next`. A default that names a model Aperture no longer
+   serves (for example a stale `PI_DEFAULT_MODEL` in `pi_config/.env`) makes
+   the CLI fall back silently, so check it against `curl http://ai/v1/models`.
 
    ```bash
-   "${SKILL_DIR}/scripts/gnhf.py" -s pi -P aperture -m "qwen3.8-flash-next-iq4"
-   "${SKILL_DIR}/scripts/gnhf.py" -s opencode -m "aperture/qwen3.8-flash-next-iq4"
+   "${SKILL_DIR}/scripts/gnhf.py" -s pi -P switchyard -m "local/coding"
+   "${SKILL_DIR}/scripts/gnhf.py" -s opencode -m "switchyard/local/coding"
    ```
 
    If this passes, resolve to this explicit value for the real run. If it
-   fails, retry against `qwen3.5-9b` before falling through to step 5.
+   fails, retry against `strata-flash-next` (`-P aperture` for pi,
+   `aperture/strata-flash-next` for opencode) before falling through to
+   step 5. opencode v2 has no `--path` flag: `gnhf.py` sets the child's cwd
+   and `PWD` instead. If pi exits on an extension load error, `pi -ne`
+   (no extensions) isolates it from the model.
 5. **Only if step 4 also fails, or step 3 found no config repos at all**:
    bail out cleanly. Report the specific blocker (which command failed, what
    it printed) rather than launching the real task on a guess.

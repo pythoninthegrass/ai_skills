@@ -159,7 +159,7 @@ def parse_args(argv):
     return args
 
 
-def build_smoke_cmd(agent, provider, model, path):
+def build_smoke_cmd(agent, provider, model):
     if agent == "pi":
         if not shutil.which("pi"):
             return None, "FAIL: pi is not on PATH"
@@ -173,17 +173,21 @@ def build_smoke_cmd(agent, provider, model, path):
     if agent == "opencode":
         if not shutil.which("opencode"):
             return None, "FAIL: opencode is not on PATH"
-        cmd = ["opencode", "run", SMOKE_TEST_PROMPT, "--path", path]
+        cmd = ["opencode", "run", SMOKE_TEST_PROMPT]
         if model:
             cmd += ["--model", model]
         return cmd, None
     return None, f"Unknown agent: {agent} (expected 'pi' or 'opencode')"
 
 
-def run_with_timeout(cmd, timeout_s):
+def run_with_timeout(cmd, timeout_s, cwd=None):
     start = time.monotonic()
+    # opencode run resolves its working directory from $PWD before the process cwd
+    env = {**os.environ, "PWD": str(cwd)} if cwd else None
     try:
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout_s, text=True)
+        proc = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout_s, text=True, cwd=cwd, env=env
+        )
         rc, output = proc.returncode, proc.stdout
     except subprocess.TimeoutExpired as exc:
         rc = 124
@@ -192,7 +196,7 @@ def run_with_timeout(cmd, timeout_s):
 
 
 def run_smoke_test(agent, provider, model, path, timeout_s, max_retries, base_backoff, max_backoff):
-    cmd, err = build_smoke_cmd(agent, provider, model, path or os.getcwd())
+    cmd, err = build_smoke_cmd(agent, provider, model)
     if cmd is None:
         print(err, file=sys.stderr)
         return EXIT_FAIL
@@ -201,7 +205,7 @@ def run_smoke_test(agent, provider, model, path, timeout_s, max_retries, base_ba
     while True:
         attempt += 1
         print(f"Running: {' '.join(cmd)} (timeout {timeout_s}s)", file=sys.stderr)
-        rc, elapsed, output = run_with_timeout(cmd, timeout_s)
+        rc, elapsed, output = run_with_timeout(cmd, timeout_s, cwd=path)
 
         if rc == 124:
             print(f"FAIL: timed out after {timeout_s}s waiting for a response", file=sys.stderr)

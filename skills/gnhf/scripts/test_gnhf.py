@@ -207,6 +207,31 @@ def test_smoke_test_pass(tmp_path, monkeypatch):
     assert rc == gnhf.EXIT_OK
 
 
+def test_smoke_test_opencode_uses_cwd_not_path_flag(tmp_path, monkeypatch):
+    bin_dir = make_fake_bin(
+        tmp_path,
+        "opencode",
+        "import os, sys\n"
+        "if '--path' in sys.argv: print('Unrecognized flag: --path'); sys.exit(1)\n"
+        "print('PONG' if os.getcwd() == os.path.realpath(os.environ['EXPECT_CWD']) and os.environ.get('PWD') == os.environ['EXPECT_CWD'] else 'WRONG')",
+    )
+    prepend_path(monkeypatch, bin_dir)
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setenv("EXPECT_CWD", str(work))
+    rc = gnhf.run_smoke_test(
+        agent="opencode",
+        provider=None,
+        model=None,
+        path=str(work),
+        timeout_s=10,
+        max_retries=1,
+        base_backoff=0.05,
+        max_backoff=0.1,
+    )
+    assert rc == gnhf.EXIT_OK
+
+
 def test_smoke_test_rate_limited_exhausts_retries(tmp_path, monkeypatch):
     bin_dir = make_fake_bin(
         tmp_path,
